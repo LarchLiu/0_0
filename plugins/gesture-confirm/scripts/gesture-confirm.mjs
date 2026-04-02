@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { prompt } from './node_modules/glimpseui/src/glimpse.mjs';
+import { prompt } from './native/glimpse.mjs';
 import { parseArgs } from 'node:util';
 
 const { values } = parseArgs({
@@ -8,20 +8,83 @@ const { values } = parseArgs({
     message: { type: 'string', default: 'Confirm this action?' },
     mode:    { type: 'string', default: 'confirm' },  // confirm | select
     options: { type: 'string', default: '' },          // comma-separated options for select mode
+    'choices-json': { type: 'string', default: '' },   // JSON array of { label, value }
     timeout: { type: 'string', default: '30000' },
   },
 });
 
 const confirmMessage = values.message;
 const mode = values.mode;
-const selectOptions = values.options ? values.options.split(',').map(s => s.trim()).slice(0, 5) : [];
+const choiceMatches = (choice, keywords) => {
+  const valuesToCheck = [choice?.value, choice?.label]
+    .filter((value) => typeof value === 'string')
+    .map((value) => value.trim().toLowerCase());
+  return keywords.some((keyword) => valuesToCheck.includes(keyword));
+};
+function parseStructuredChoices(rawChoicesJson) {
+  if (!rawChoicesJson) {
+    return { choices: [], error: null };
+  }
+
+  try {
+    const parsed = JSON.parse(rawChoicesJson);
+    if (!Array.isArray(parsed)) {
+      return { choices: [], error: '--choices-json must be a JSON array' };
+    }
+
+    const choices = parsed
+      .map((choice) => {
+        if (!choice || typeof choice !== 'object') return null;
+        const label = typeof choice.label === 'string' ? choice.label.trim() : '';
+        if (!label) return null;
+        return {
+          label,
+          value: Object.hasOwn(choice, 'value') ? choice.value : label,
+        };
+      })
+      .filter(Boolean)
+      .slice(0, 5);
+
+    return { choices, error: null };
+  } catch (error) {
+    return {
+      choices: [],
+      error: error instanceof Error ? error.message : 'Invalid JSON',
+    };
+  }
+}
+
+const { choices: structuredChoices, error: structuredChoicesError } = parseStructuredChoices(values['choices-json']);
+if (structuredChoicesError) {
+  console.error(`Invalid --choices-json: ${structuredChoicesError}`);
+  process.exit(2);
+}
+const allowChoiceIndex = structuredChoices.findIndex((choice) => choiceMatches(choice, ['allow', 'approve', 'accept', 'yes', 'continue', '允许', '同意']));
+const denyChoiceIndex = structuredChoices.findIndex((choice) => choiceMatches(choice, ['deny', 'reject', 'decline', 'no', 'cancel', '拒绝', '否决', '取消']));
+const numberedChoices = structuredChoices.length > 0
+  ? structuredChoices.filter((_, index) => index !== allowChoiceIndex && index !== denyChoiceIndex).slice(0, 5)
+  : [];
+const selectOptions = numberedChoices.length > 0
+  ? numberedChoices.map((choice) => choice.label)
+  : structuredChoices.length === 0 && values.options
+    ? values.options.split(',').map(s => s.trim()).slice(0, 5)
+    : [];
+const hasNumberSelections = selectOptions.length > 0;
+const isConfirmOnly = !hasNumberSelections && mode === 'confirm';
+const hasAllowAction = allowChoiceIndex !== -1 || isConfirmOnly;
+const hasDenyAction = denyChoiceIndex !== -1 || isConfirmOnly || hasNumberSelections;
+const denyActionLabel = denyChoiceIndex !== -1 || isConfirmOnly ? 'Deny' : 'Cancel';
+const initialHint = [
+  allowChoiceIndex !== -1 || isConfirmOnly ? 'Thumbs up = allow' : null,
+  denyChoiceIndex !== -1 || isConfirmOnly ? 'Fist = deny' : hasNumberSelections ? 'Fist = cancel' : null,
+  hasNumberSelections ? '1-' + selectOptions.length + ' fingers = select option' : null,
+].filter(Boolean).join(' • ');
 const timeoutMs = parseInt(values.timeout, 10);
 
 const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-
 // Build options list HTML for select mode
 const optionsHtml = selectOptions.map((opt, i) =>
-  `<div class="option" id="opt${i+1}"><span class="option-num">${i+1}</span> ${escapeHtml(opt)}</div>`
+  `<div class="option" id="opt${i+1}"><span class="option-num">${i + 1}</span> ${escapeHtml(opt)}</div>`
 ).join('');
 
 const html = `
@@ -75,10 +138,12 @@ const html = `
   .progress-fg.select { stroke: #60a5fa; }
   .hint { font-size: 12px; color: #888; }
   .buttons { display: flex; gap: 8px; padding: 8px 16px; }
+  .buttons:last-of-type { padding-bottom: 16px; }
   .buttons button {
     flex: 1; padding: 8px; border: none; border-radius: 6px;
     font-size: 13px; cursor: pointer;
   }
+  .buttons + .buttons { padding-top: 0; }
   .btn-deny { background: #dc2626; color: white; }
   .btn-allow { background: #16a34a; color: white; }
   .btn-select { background: #2563eb; color: white; font-size: 12px; }
@@ -88,28 +153,6 @@ const html = `
     width: 100%; height: 100%; color: #888; font-size: 14px;
     flex-direction: column; gap: 8px;
   }
-  .options-panel {
-    padding: 8px 16px;
-    border-top: 1px solid rgba(255,255,255,0.1);
-  }
-  .option {
-    padding: 6px 12px; margin: 4px 0; border-radius: 6px;
-    font-size: 13px; color: #ccc;
-    background: rgba(255,255,255,0.05);
-    transition: background 0.15s, color 0.15s;
-  }
-  .option.active {
-    background: rgba(96,165,250,0.3); color: #fff;
-  }
-  .option-num {
-    display: inline-block; width: 22px; height: 22px;
-    line-height: 22px; text-align: center; border-radius: 50%;
-    background: rgba(255,255,255,0.1); font-size: 12px; font-weight: 600;
-    margin-right: 8px;
-  }
-  .option.active .option-num {
-    background: #60a5fa; color: #fff;
-  }
 </style>
 </head>
 <body>
@@ -118,29 +161,33 @@ const html = `
     <video id="video" autoplay playsinline></video>
     <canvas id="canvas"></canvas>
     <div id="noCam" class="no-camera" style="display:none;">
-      <div>Camera unavailable</div>
-      <div style="font-size:12px;">Use buttons below</div>
+      <div id="noCamTitle">Camera unavailable</div>
+      <div id="noCamDetail" style="font-size:12px;">Use buttons below</div>
     </div>
   </div>
   <div class="status-bar">
     <div>
       <div class="gesture-label" id="gestureLabel">Waiting...</div>
-      <div class="hint" id="hintText">${mode === 'select' ? 'Show 1-' + selectOptions.length + ' fingers to select' : 'Thumbs up to allow, fist to deny'}</div>
+      <div class="hint" id="hintText">${initialHint}</div>
     </div>
     <svg class="progress-ring" viewBox="0 0 36 36">
       <circle class="progress-bg" cx="18" cy="18" r="15"/>
       <circle class="progress-fg" id="progressCircle" cx="18" cy="18" r="15"/>
     </svg>
   </div>
-  ${mode === 'select' ? '<div class="options-panel" id="optionsPanel">' + optionsHtml + '</div>' : ''}
-  <div class="buttons" id="buttonsBar">
-    ${mode === 'confirm' ? `
-      <button class="btn-deny" onclick="sendResult({decision:'deny'})">Deny (Esc)</button>
-      <button class="btn-allow" onclick="sendResult({decision:'allow'})">Allow (Enter)</button>
-    ` : selectOptions.map((opt, i) =>
-      `<button class="btn-select" onclick="sendResult({selection:${i+1},label:'${escapeHtml(opt)}'})">${i+1}</button>`
-    ).join('')}
-  </div>
+  ${hasAllowAction || hasDenyAction ? `
+    <div class="buttons" id="actionButtons">
+      ${hasDenyAction ? `<button class="btn-deny" onclick="sendDenyOrCancel()">✊ ${denyActionLabel}</button>` : ''}
+      ${hasAllowAction ? `<button class="btn-allow" onclick="sendAllow()">👍 Allow</button>` : ''}
+    </div>
+  ` : ''}
+  ${hasNumberSelections ? `
+    <div class="buttons" id="buttonsBar">
+      ${selectOptions.map((opt, i) =>
+        `<button class="btn-select" onclick="sendSelection(${i+1})">${i + 1}. ${escapeHtml(opt)}</button>`
+      ).join('')}
+    </div>
+  ` : ''}
 
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.min.js"><\/script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.min.js"><\/script>
@@ -148,13 +195,21 @@ const html = `
 
   <script>
     const MODE = '${mode}';
+    const IS_CONFIRM_ONLY = ${JSON.stringify(isConfirmOnly)};
     const OPTIONS = ${JSON.stringify(selectOptions)};
+    const NUMBERED_CHOICES = ${JSON.stringify(numberedChoices)};
+    const ALLOW_CHOICE_INDEX = ${allowChoiceIndex};
+    const DENY_CHOICE_INDEX = ${denyChoiceIndex};
+    const DEFAULT_HINT = ${JSON.stringify(initialHint)};
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     const gestureLabel = document.getElementById('gestureLabel');
     const hintText = document.getElementById('hintText');
     const progressCircle = document.getElementById('progressCircle');
+    const noCam = document.getElementById('noCam');
+    const noCamTitle = document.getElementById('noCamTitle');
+    const noCamDetail = document.getElementById('noCamDetail');
     const circumference = 2 * Math.PI * 15;
 
     let currentGesture = null;
@@ -168,17 +223,120 @@ const html = `
       window.glimpse.send(data);
     }
 
+    function sendSelection(num) {
+      if (num < 1 || num > OPTIONS.length) return;
+      const choice = NUMBERED_CHOICES[num - 1];
+      if (choice) {
+        sendResult({ selection: num, label: choice.label, value: choice.value });
+      } else {
+        sendResult({ selection: num, label: OPTIONS[num - 1] });
+      }
+    }
+
+    function sendAllow() {
+      if (ALLOW_CHOICE_INDEX >= 0) {
+        sendSelection(ALLOW_CHOICE_INDEX + 1);
+      } else {
+        sendResult({ decision: 'allow' });
+      }
+    }
+
+    function sendDenyOrCancel() {
+      if (DENY_CHOICE_INDEX >= 0) {
+        sendSelection(DENY_CHOICE_INDEX + 1);
+      } else if (IS_CONFIRM_ONLY) {
+        sendResult({ decision: 'deny' });
+      } else {
+        sendResult({ selection: 0, label: '' });
+      }
+    }
+
+    function showCameraFallback(title, detail, color = '#f59e0b') {
+      noCamTitle.textContent = title;
+      noCamDetail.textContent = detail;
+      noCam.style.display = 'flex';
+      video.style.display = 'none';
+      canvas.style.display = 'none';
+      gestureLabel.textContent = title;
+      gestureLabel.style.color = color;
+      progressCircle.style.strokeDashoffset = circumference;
+      progressCircle.classList.remove('deny', 'select');
+      hintText.textContent = detail;
+    }
+
+    async function getVideoInputCount() {
+      if (!navigator.mediaDevices?.enumerateDevices) return null;
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        return devices.filter((device) => device.kind === 'videoinput').length;
+      } catch {
+        return null;
+      }
+    }
+
+    function classifyCameraError(err, videoInputCount) {
+      const name = err?.name || '';
+      const message = String(err?.message || '');
+
+      if (
+        videoInputCount === 0 ||
+        name === 'NotFoundError' ||
+        name === 'DevicesNotFoundError' ||
+        /no device|0 devices|not found amongst 0 devices/i.test(message)
+      ) {
+        return {
+          title: 'No camera detected',
+          detail: 'Connect a camera or use the buttons below.',
+          color: '#f59e0b',
+        };
+      }
+
+      if (
+        name === 'NotAllowedError' ||
+        name === 'PermissionDeniedError' ||
+        name === 'SecurityError'
+      ) {
+        return {
+          title: 'Camera permission denied',
+          detail: 'Allow camera access in System Settings, or use the buttons below.',
+          color: '#f87171',
+        };
+      }
+
+      if (
+        name === 'NotReadableError' ||
+        /device in use|could not start video source|track start/i.test(message)
+      ) {
+        return {
+          title: 'Camera busy or unavailable',
+          detail: 'Close other camera apps, or use the buttons below.',
+          color: '#f59e0b',
+        };
+      }
+
+      if (name === 'OverconstrainedError') {
+        return {
+          title: 'Camera settings unsupported',
+          detail: 'Requested video settings are not available on this device.',
+          color: '#f59e0b',
+        };
+      }
+
+      return {
+        title: 'Camera unavailable',
+        detail: 'Use the buttons below.',
+        color: '#f59e0b',
+      };
+    }
+
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
-      if (MODE === 'confirm') {
-        if (e.key === 'Enter') sendResult({ decision: 'allow' });
-        if (e.key === 'Escape') sendResult({ decision: 'deny' });
-      } else {
-        const num = parseInt(e.key, 10);
-        if (num >= 1 && num <= OPTIONS.length) {
-          sendResult({ selection: num, label: OPTIONS[num - 1] });
-        }
-        if (e.key === 'Escape') sendResult({ selection: 0, label: '' });
+      if (e.key === 'Enter') sendAllow();
+      if (e.key === 'Escape') sendDenyOrCancel();
+
+      const num = parseInt(e.key, 10);
+      if (num >= 1 && num <= OPTIONS.length) {
+        sendSelection(num);
       }
     });
 
@@ -203,26 +361,17 @@ const html = `
       const fingers = [index, middle, ring, pinky];
       const fingersUp = fingers.filter(Boolean).length;
 
-      if (MODE === 'confirm') {
-        if (thumb && fingersUp === 0) return 'thumbs_up';
-        if (!thumb && fingersUp === 0) return 'fist';
-        if (thumb && fingersUp === 4) return 'open_hand';
-        return null;
-      }
-
-      // Select mode: count extended fingers (thumb not counted for 1-4, counted for 5)
-      // 1 = index only, 2 = index+middle, 3 = index+middle+ring, 4 = all four fingers, 5 = all + thumb
+      if (thumb && fingersUp === 0) return 'thumbs_up';
+      if (!thumb && fingersUp === 0) return 'fist';
       if (thumb && fingersUp === 4) return 'five';
       if (!thumb && fingersUp === 4) return 'four';
       if (index && middle && ring && !pinky) return 'three';
       if (index && middle && !ring && !pinky) return 'two';
       if (index && !middle && !ring && !pinky) return 'one';
-      if (!thumb && fingersUp === 0) return 'fist';
       return null;
     }
 
     function highlightOption(num) {
-      if (MODE !== 'select') return;
       document.querySelectorAll('.option').forEach(el => el.classList.remove('active'));
       document.querySelectorAll('.btn-select').forEach(el => el.classList.remove('active'));
       if (num >= 1 && num <= OPTIONS.length) {
@@ -246,27 +395,26 @@ const html = `
       const elapsed = now - gestureStart;
       const progress = Math.min(elapsed / HOLD_MS, 1);
 
-      if (MODE === 'confirm') {
-        if (gesture === 'thumbs_up') {
-          gestureLabel.textContent = '\\u{1f44d} Thumbs Up \\u2014 Allow';
-          gestureLabel.style.color = '#4ade80';
-          progressCircle.classList.remove('deny', 'select');
-          progressCircle.style.strokeDashoffset = circumference * (1 - progress);
-          hintText.textContent = progress < 1 ? 'Hold steady...' : 'Confirmed!';
-          if (progress >= 1) sendResult({ decision: 'allow' });
-        } else if (gesture === 'fist') {
-          gestureLabel.textContent = '\\u{270a} Fist \\u2014 Deny';
-          gestureLabel.style.color = '#f87171';
-          progressCircle.classList.add('deny');
-          progressCircle.classList.remove('select');
-          progressCircle.style.strokeDashoffset = circumference * (1 - progress);
-          hintText.textContent = progress < 1 ? 'Hold steady...' : 'Denied!';
-          if (progress >= 1) sendResult({ decision: 'deny' });
-        } else {
-          resetProgress(gesture);
-        }
+      if (gesture === 'thumbs_up' && (ALLOW_CHOICE_INDEX >= 0 || IS_CONFIRM_ONLY)) {
+        highlightOption(ALLOW_CHOICE_INDEX >= 0 ? ALLOW_CHOICE_INDEX + 1 : 0);
+        gestureLabel.textContent = '\\u{1f44d} Thumbs Up \\u2014 Allow';
+        gestureLabel.style.color = '#4ade80';
+        progressCircle.classList.remove('deny', 'select');
+        progressCircle.style.strokeDashoffset = circumference * (1 - progress);
+        hintText.textContent = progress < 1 ? 'Hold steady...' : 'Allowed!';
+        if (progress >= 1) sendAllow();
+      } else if (gesture === 'fist') {
+        highlightOption(DENY_CHOICE_INDEX >= 0 ? DENY_CHOICE_INDEX + 1 : 0);
+        gestureLabel.textContent = DENY_CHOICE_INDEX >= 0 || IS_CONFIRM_ONLY
+          ? '\\u{270a} Fist \\u2014 Deny'
+          : '\\u{270a} Fist \\u2014 Cancel';
+        gestureLabel.style.color = '#f87171';
+        progressCircle.classList.add('deny');
+        progressCircle.classList.remove('select');
+        progressCircle.style.strokeDashoffset = circumference * (1 - progress);
+        hintText.textContent = progress < 1 ? 'Hold steady...' : (DENY_CHOICE_INDEX >= 0 || IS_CONFIRM_ONLY ? 'Denied!' : 'Cancelled!');
+        if (progress >= 1) sendDenyOrCancel();
       } else {
-        // Select mode
         const num = fingerNames[gesture];
         if (num && num <= OPTIONS.length) {
           highlightOption(num);
@@ -276,16 +424,7 @@ const html = `
           progressCircle.classList.add('select');
           progressCircle.style.strokeDashoffset = circumference * (1 - progress);
           hintText.textContent = progress < 1 ? 'Hold steady...' : 'Selected!';
-          if (progress >= 1) sendResult({ selection: num, label: OPTIONS[num - 1] });
-        } else if (gesture === 'fist') {
-          highlightOption(0);
-          gestureLabel.textContent = '\\u{270a} Cancel';
-          gestureLabel.style.color = '#f87171';
-          progressCircle.classList.add('deny');
-          progressCircle.classList.remove('select');
-          progressCircle.style.strokeDashoffset = circumference * (1 - progress);
-          hintText.textContent = progress < 1 ? 'Hold steady...' : 'Cancelled!';
-          if (progress >= 1) sendResult({ selection: 0, label: '' });
+          if (progress >= 1) sendSelection(num);
         } else {
           highlightOption(0);
           resetProgress(gesture);
@@ -299,11 +438,7 @@ const html = `
       gestureLabel.style.color = '#fff';
       progressCircle.style.strokeDashoffset = circumference;
       progressCircle.classList.remove('deny', 'select');
-      if (MODE === 'confirm') {
-        hintText.textContent = 'Thumbs up to allow, fist to deny';
-      } else {
-        hintText.textContent = 'Show 1-' + OPTIONS.length + ' fingers to select';
-      }
+      hintText.textContent = DEFAULT_HINT;
     }
 
     // MediaPipe Hands
@@ -338,6 +473,16 @@ const html = `
     });
 
     async function startCamera() {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        showCameraFallback(
+          'Camera API unavailable',
+          'This host cannot access camera APIs on this system.'
+        );
+        return;
+      }
+
+      const videoInputCount = await getVideoInputCount();
+
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { width: 640, height: 480, facingMode: 'user' }
@@ -352,9 +497,8 @@ const html = `
         cam.start();
       } catch (err) {
         console.error('Camera error:', err);
-        document.getElementById('noCam').style.display = 'flex';
-        video.style.display = 'none';
-        canvas.style.display = 'none';
+        const cameraError = classifyCameraError(err, videoInputCount);
+        showCameraFallback(cameraError.title, cameraError.detail, cameraError.color);
       }
     }
 
@@ -364,23 +508,23 @@ const html = `
 </html>
 `;
 
-const windowHeight = mode === 'select' ? 520 + selectOptions.length * 36 : 520;
+const windowHeight = hasNumberSelections ? 520 + selectOptions.length * 36 : 520;
 
 const result = await prompt(html, {
   width: 640,
   height: windowHeight,
-  title: mode === 'select' ? 'Gesture Select' : 'Gesture Confirm',
+  title: hasNumberSelections ? 'Gesture Select' : 'Gesture Confirm',
   timeout: timeoutMs,
 });
 
 if (result) {
-  if (mode === 'confirm') {
+  if (isConfirmOnly) {
     console.log(JSON.stringify({ permissionDecision: result.decision || 'deny' }));
   } else {
     console.log(JSON.stringify(result));
   }
 } else {
-  if (mode === 'confirm') {
+  if (isConfirmOnly) {
     console.log(JSON.stringify({ permissionDecision: 'deny' }));
   } else {
     console.log(JSON.stringify({ selection: 0, label: '' }));

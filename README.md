@@ -1,8 +1,8 @@
 # gesture-confirm
 
-Claude Code marketplace repository for the `gesture-confirm` plugin. The plugin uses MediaPipe hand tracking + Glimpse native macOS windows for gesture-based confirmation and selection.
+Claude Code marketplace repository for the `gesture-confirm` plugin. The plugin uses MediaPipe hand tracking with a native macOS `WKWebView` host for gesture-based confirmation and selection.
 
-macOS only. `glimpseui` depends on WKWebView and this plugin is not intended for Linux or Windows.
+macOS only. The plugin embeds a native `WKWebView` host and is not intended for Linux or Windows.
 
 ## Quick Install
 
@@ -23,7 +23,7 @@ claude plugin install gesture-confirm@gesture-confirm-marketplace
 
 - macOS
 - Node.js 18+
-- Xcode Command Line Tools (for Glimpse native build)
+- Xcode Command Line Tools (for the native host build)
 
 ## Install
 

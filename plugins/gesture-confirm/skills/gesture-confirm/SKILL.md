@@ -10,7 +10,7 @@ description: >-
 version: 1.0.0
 ---
 
-# Gesture Confirm — Hand Gesture Confirmation & Selection via Glimpse + MediaPipe
+# Gesture Confirm — Hand Gesture Confirmation & Selection via Native WKWebView + MediaPipe
 
 Open a native macOS window with a live camera feed and MediaPipe hand tracking.
 Two modes: **confirm** (allow/deny) and **select** (choose from 1-5 options by finger count).
@@ -33,8 +33,8 @@ Two modes: **confirm** (allow/deny) and **select** (choose from 1-5 options by f
 
 ## Prerequisites
 
-The plugin requires `glimpseui` as a local npm dependency. The scripts directory
-contains a `package.json` that declares this dependency.
+The plugin ships a local Swift `WKWebView` host in `scripts/native/`.
+Running `npm install` in the scripts directory compiles that host binary.
 
 ## Execution Steps
 
@@ -42,7 +42,7 @@ contains a `package.json` that declares this dependency.
 
 ```bash
 SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
-if [ ! -d "$SCRIPTS_DIR/node_modules/glimpseui" ]; then
+if [ ! -x "$SCRIPTS_DIR/native/glimpse" ]; then
   cd "$SCRIPTS_DIR" && npm install
 fi
 ```
@@ -85,4 +85,4 @@ or on cancel:
 
 - **Camera not available**: Fallback buttons and keyboard shortcuts are always available.
 - **MediaPipe loading slow**: First run downloads model files (~5MB) from CDN. Cached after.
-- **Glimpse not installed**: Run `cd "${CLAUDE_PLUGIN_ROOT}/scripts" && npm install`.
+- **Native host not built**: Run `cd "${CLAUDE_PLUGIN_ROOT}/scripts" && npm install`.

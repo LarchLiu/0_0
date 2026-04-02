@@ -111,13 +111,11 @@ const html = `
   video {
     width: 100%; height: 100%; object-fit: cover;
     transform: scaleX(-1);
-    display: none;
   }
   canvas {
-    position: relative;
+    position: absolute; top: 0; left: 0;
     width: 100%; height: 100%;
     transform: scaleX(-1);
-    background: #000;
   }
   .status-bar {
     padding: 10px 16px; display: flex;

@@ -216,7 +216,7 @@ const html = `
     let currentGesture = null;
     let gestureStart = 0;
     let lastGestureTime = 0;
-    const HOLD_MS = 1500;
+    const HOLD_MS = 800;
     const GRACE_MS = 300;
     let decided = false;
 

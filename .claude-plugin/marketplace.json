@@ -11,7 +11,7 @@
       "name": "gesture-confirm",
       "source": "./plugins/gesture-confirm",
       "description": "Gesture-based confirmation for Claude Code — thumbs up/fist for allow/deny, finger count 1-5 for option selection via MediaPipe hand tracking and native WKWebView host",
-      "version": "2.0.0",
+      "version": "2.0.1",
       "author": {
         "name": "cloudgeek"
       },

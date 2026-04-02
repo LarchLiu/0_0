@@ -110,6 +110,7 @@ export function prompt(html, options = {}) {
       if (!resolved) {
         resolved = true;
         if (timer) clearTimeout(timer);
+        win.close();
         resolve(data);
       }
     });

@@ -220,7 +220,9 @@ const html = `
     function sendResult(data) {
       if (decided) return;
       decided = true;
-      window.glimpse.send(data);
+      // Defer to escape MediaPipe onResults callback — postMessage
+      // can be dropped if fired synchronously during frame processing.
+      setTimeout(() => window.glimpse.send(data), 0);
     }
 
     function sendSelection(num) {
@@ -348,8 +350,8 @@ const html = `
     function isThumbExtended(landmarks, handedness) {
       const tipX = landmarks[4].x;
       const ipX = landmarks[3].x;
-      if (handedness === 'Left') return tipX < ipX;
-      return tipX > ipX;
+      if (handedness === 'Left') return tipX > ipX;
+      return tipX < ipX;
     }
 
     function classifyGesture(landmarks, handedness) {

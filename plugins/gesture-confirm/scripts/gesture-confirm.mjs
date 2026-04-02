@@ -9,7 +9,7 @@ const { values } = parseArgs({
     mode:    { type: 'string', default: 'confirm' },  // confirm | select
     options: { type: 'string', default: '' },          // comma-separated options for select mode
     'choices-json': { type: 'string', default: '' },   // JSON array of { label, value }
-    timeout: { type: 'string', default: '30000' },
+    timeout: { type: 'string', default: '60000' },
   },
 });
 
@@ -215,7 +215,9 @@ const html = `
 
     let currentGesture = null;
     let gestureStart = 0;
+    let lastGestureTime = 0;
     const HOLD_MS = 1500;
+    const GRACE_MS = 300;
     let decided = false;
 
     function sendResult(data) {
@@ -411,9 +413,16 @@ const html = `
     function updateProgress(gesture) {
       const now = Date.now();
 
-      if (gesture !== currentGesture) {
-        currentGesture = gesture;
-        gestureStart = now;
+      if (gesture === currentGesture) {
+        lastGestureTime = now;
+      } else if (gesture !== currentGesture) {
+        if (now - lastGestureTime < GRACE_MS && currentGesture !== null) {
+          // Brief flicker — keep current gesture, don't reset
+        } else {
+          currentGesture = gesture;
+          gestureStart = now;
+          lastGestureTime = now;
+        }
       }
 
       const elapsed = now - gestureStart;

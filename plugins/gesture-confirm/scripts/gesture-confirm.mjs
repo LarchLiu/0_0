@@ -75,7 +75,7 @@ const hasAllowAction = allowChoiceIndex !== -1 || isConfirmOnly;
 const hasDenyAction = denyChoiceIndex !== -1 || isConfirmOnly || hasNumberSelections;
 const denyActionLabel = denyChoiceIndex !== -1 || isConfirmOnly ? 'Deny' : 'Cancel';
 const initialHint = [
-  allowChoiceIndex !== -1 || isConfirmOnly ? 'Thumbs up = allow' : null,
+  allowChoiceIndex !== -1 || isConfirmOnly ? 'OK gesture = allow' : null,
   denyChoiceIndex !== -1 || isConfirmOnly ? 'Fist = deny' : hasNumberSelections ? 'Fist = cancel' : null,
   hasNumberSelections ? '1-' + selectOptions.length + ' fingers = select option' : null,
 ].filter(Boolean).join(' • ');
@@ -178,7 +178,7 @@ const html = `
   ${hasAllowAction || hasDenyAction ? `
     <div class="buttons" id="actionButtons">
       ${hasDenyAction ? `<button class="btn-deny" onclick="sendDenyOrCancel()">✊ ${denyActionLabel}</button>` : ''}
-      ${hasAllowAction ? `<button class="btn-allow" onclick="sendAllow()">👍 Allow</button>` : ''}
+      ${hasAllowAction ? `<button class="btn-allow" onclick="sendAllow()">👌 Allow</button>` : ''}
     </div>
   ` : ''}
   ${hasNumberSelections ? `
@@ -198,6 +198,7 @@ const html = `
     const IS_CONFIRM_ONLY = ${JSON.stringify(isConfirmOnly)};
     const OPTIONS = ${JSON.stringify(selectOptions)};
     const NUMBERED_CHOICES = ${JSON.stringify(numberedChoices)};
+    const STRUCTURED_CHOICES = ${JSON.stringify(structuredChoices)};
     const ALLOW_CHOICE_INDEX = ${allowChoiceIndex};
     const DENY_CHOICE_INDEX = ${denyChoiceIndex};
     const DEFAULT_HINT = ${JSON.stringify(initialHint)};
@@ -237,7 +238,8 @@ const html = `
 
     function sendAllow() {
       if (ALLOW_CHOICE_INDEX >= 0) {
-        sendSelection(ALLOW_CHOICE_INDEX + 1);
+        const c = STRUCTURED_CHOICES[ALLOW_CHOICE_INDEX];
+        sendResult({ label: c.label, value: c.value });
       } else {
         sendResult({ decision: 'allow' });
       }
@@ -245,7 +247,8 @@ const html = `
 
     function sendDenyOrCancel() {
       if (DENY_CHOICE_INDEX >= 0) {
-        sendSelection(DENY_CHOICE_INDEX + 1);
+        const c = STRUCTURED_CHOICES[DENY_CHOICE_INDEX];
+        sendResult({ label: c.label, value: c.value });
       } else if (IS_CONFIRM_ONLY) {
         sendResult({ decision: 'deny' });
       } else {
@@ -347,6 +350,20 @@ const html = `
       return landmarks[tip].y < landmarks[pip].y;
     }
 
+    function distance(a, b) {
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    }
+
+    function isOkGesture(landmarks) {
+      // Thumb tip (4) and index tip (8) touching
+      const thumbIndexDist = distance(landmarks[4], landmarks[8]);
+      // Middle, ring, pinky extended
+      const middle = isFingerExtended(landmarks, 12, 10);
+      const ring = isFingerExtended(landmarks, 16, 14);
+      const pinky = isFingerExtended(landmarks, 20, 18);
+      return thumbIndexDist < 0.07 && middle && ring && pinky;
+    }
+
     function isThumbExtended(landmarks, handedness) {
       const tipX = landmarks[4].x;
       const ipX = landmarks[3].x;
@@ -360,15 +377,20 @@ const html = `
       const middle = isFingerExtended(landmarks, 12, 10);
       const ring = isFingerExtended(landmarks, 16, 14);
       const pinky = isFingerExtended(landmarks, 20, 18);
-      const fingers = [index, middle, ring, pinky];
-      const fingersUp = fingers.filter(Boolean).length;
 
-      if (thumb && fingersUp === 0) return 'thumbs_up';
-      if (!thumb && fingersUp === 0) return 'fist';
-      if (thumb && fingersUp === 4) return 'five';
-      if (!thumb && fingersUp === 4) return 'four';
-      if (index && middle && ring && !pinky) return 'three';
+      // OK gesture: thumb+index touching, other fingers extended
+      if (isOkGesture(landmarks)) return 'ok';
+      // Fist: all fingers curled
+      if (!thumb && !index && !middle && !ring && !pinky) return 'fist';
+      // 5: all fingers extended
+      if (thumb && index && middle && ring && pinky) return 'five';
+      // 4: four fingers (no thumb)
+      if (!thumb && index && middle && ring && pinky) return 'four';
+      // 3: thumb + index + middle
+      if (thumb && index && middle && !ring && !pinky) return 'three';
+      // 2: index + middle
       if (index && middle && !ring && !pinky) return 'two';
+      // 1: index only
       if (index && !middle && !ring && !pinky) return 'one';
       return null;
     }
@@ -397,9 +419,9 @@ const html = `
       const elapsed = now - gestureStart;
       const progress = Math.min(elapsed / HOLD_MS, 1);
 
-      if (gesture === 'thumbs_up' && (ALLOW_CHOICE_INDEX >= 0 || IS_CONFIRM_ONLY)) {
+      if (gesture === 'ok' && (ALLOW_CHOICE_INDEX >= 0 || IS_CONFIRM_ONLY)) {
         highlightOption(ALLOW_CHOICE_INDEX >= 0 ? ALLOW_CHOICE_INDEX + 1 : 0);
-        gestureLabel.textContent = '\\u{1f44d} Thumbs Up \\u2014 Allow';
+        gestureLabel.textContent = '\\u{1f44c} OK \\u2014 Allow';
         gestureLabel.style.color = '#4ade80';
         progressCircle.classList.remove('deny', 'select');
         progressCircle.style.strokeDashoffset = circumference * (1 - progress);
@@ -520,15 +542,13 @@ const result = await prompt(html, {
 });
 
 if (result) {
-  if (isConfirmOnly) {
-    console.log(JSON.stringify({ permissionDecision: result.decision || 'deny' }));
-  } else {
+  if (result.decision) {
+    console.log(JSON.stringify({ permissionDecision: result.decision }));
+  } else if (result.value) {
     console.log(JSON.stringify(result));
+  } else {
+    console.log(JSON.stringify({ permissionDecision: 'deny' }));
   }
 } else {
-  if (isConfirmOnly) {
-    console.log(JSON.stringify({ permissionDecision: 'deny' }));
-  } else {
-    console.log(JSON.stringify({ selection: 0, label: '' }));
-  }
+  console.log(JSON.stringify({ permissionDecision: 'deny' }));
 }

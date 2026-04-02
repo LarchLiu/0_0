@@ -1,6 +1,15 @@
 # gesture-confirm
 
-Hand gesture confirmation plugin for Claude Code. Uses MediaPipe hand tracking + Glimpse native macOS windows.
+Claude Code marketplace repository for the `gesture-confirm` plugin. The plugin uses MediaPipe hand tracking + Glimpse native macOS windows for gesture-based confirmation and selection.
+
+macOS only. `glimpseui` depends on WKWebView and this plugin is not intended for Linux or Windows.
+
+## Quick Install
+
+```bash
+claude plugin marketplace add github:cloudgeek/gesture-confirm
+claude plugin install gesture-confirm@gesture-confirm-marketplace
+```
 
 ## Features
 
@@ -12,23 +21,30 @@ Hand gesture confirmation plugin for Claude Code. Uses MediaPipe hand tracking +
 
 ## Requirements
 
-- macOS (Glimpse uses WKWebView)
+- macOS
 - Node.js 18+
 - Xcode Command Line Tools (for Glimpse native build)
 
 ## Install
 
-```bash
-claude plugin add /path/to/gesture-confirm
-```
+This repository is a marketplace, not a single-plugin root. Add the marketplace first, then install the plugin from it.
 
-Or from GitHub:
+From a local checkout:
 
 ```bash
-claude plugin add github:cloudgeek/gesture-confirm
+claude plugin marketplace add /path/to/gesture-confirm
+claude plugin install gesture-confirm@gesture-confirm-marketplace
 ```
 
-Dependencies are auto-installed on first use via the hook script.
+From GitHub:
+
+```bash
+claude plugin marketplace add github:cloudgeek/gesture-confirm
+claude plugin install gesture-confirm@gesture-confirm-marketplace
+```
+
+The plugin implementation lives in `plugins/gesture-confirm`.
+Dependencies are auto-installed on first hook execution via the hook script.
 
 ## Usage
 
@@ -45,12 +61,20 @@ Ask Claude to use gesture confirmation:
 
 ### CLI (standalone)
 
+If you have not triggered the hook before, install the script dependencies once:
+
+```bash
+cd plugins/gesture-confirm/scripts
+npm install
+cd ../../..
+```
+
 ```bash
 # Confirm mode
-node scripts/gesture-confirm.mjs --message "Deploy to production?"
+node plugins/gesture-confirm/scripts/gesture-confirm.mjs --message "Deploy to production?"
 
 # Select mode
-node scripts/gesture-confirm.mjs --mode select --options "Approach A,Approach B,Approach C"
+node plugins/gesture-confirm/scripts/gesture-confirm.mjs --mode select --options "Approach A,Approach B,Approach C"
 ```
 
 ## Gestures

@@ -2,6 +2,15 @@
 
 Hand gesture confirmation plugin for Claude Code. Uses MediaPipe hand tracking + Glimpse native macOS windows.
 
+macOS only. `glimpseui` depends on WKWebView and this plugin is not intended for Linux or Windows.
+
+## Quick Install
+
+```bash
+claude plugin marketplace add github:cloudgeek/gesture-confirm
+claude plugin install gesture-confirm@gesture-confirm-marketplace
+```
+
 ## Features
 
 - **Confirm mode**: Thumbs up = allow, Fist = deny
@@ -12,20 +21,24 @@ Hand gesture confirmation plugin for Claude Code. Uses MediaPipe hand tracking +
 
 ## Requirements
 
-- macOS (Glimpse uses WKWebView)
+- macOS
 - Node.js 18+
 - Xcode Command Line Tools (for Glimpse native build)
 
 ## Install
 
+This plugin is published from the repository marketplace root. Add the marketplace, then install the plugin:
+
 ```bash
-claude plugin add /path/to/gesture-confirm
+claude plugin marketplace add /path/to/gesture-confirm
+claude plugin install gesture-confirm@gesture-confirm-marketplace
 ```
 
 Or from GitHub:
 
 ```bash
-claude plugin add github:cloudgeek/gesture-confirm
+claude plugin marketplace add github:cloudgeek/gesture-confirm
+claude plugin install gesture-confirm@gesture-confirm-marketplace
 ```
 
 Dependencies are auto-installed on first use via the hook script.
@@ -45,7 +58,17 @@ Ask Claude to use gesture confirmation:
 
 ### CLI (standalone)
 
+If you have not triggered the hook before, install the script dependencies once:
+
 ```bash
+cd plugins/gesture-confirm/scripts
+npm install
+cd ..
+```
+
+```bash
+cd plugins/gesture-confirm
+
 # Confirm mode
 node scripts/gesture-confirm.mjs --message "Deploy to production?"
 

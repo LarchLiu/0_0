@@ -18,17 +18,17 @@ Two modes: **confirm** (allow/deny) and **select** (choose from 1-5 options by f
 ## Modes
 
 ### Confirm Mode (default)
-- **Thumbs up** (hold 1.5s) → Allow
-- **Fist** (hold 1.5s) → Deny
+- **OK gesture** 👌 (thumb + index touching, hold 1.5s) → Allow
+- **Fist** ✊ (hold 1.5s) → Deny
 - Keyboard: Enter = allow, Escape = deny
 
 ### Select Mode
 - **1 finger** (index) → Option 1
 - **2 fingers** (index + middle) → Option 2
-- **3 fingers** (index + middle + ring) → Option 3
-- **4 fingers** (four fingers, no thumb) → Option 4
-- **5 fingers** (open hand) → Option 5
-- **Fist** → Cancel
+- **3 fingers** (thumb + index + middle) → Option 3
+- **4 fingers** (index + middle + ring + pinky, no thumb) → Option 4
+- **5 fingers** (all fingers open) → Option 5
+- **Fist** ✊ → Cancel
 - Keyboard: 1-5 = select, Escape = cancel
 
 ## Prerequisites

@@ -4,19 +4,19 @@
     "name": "cloudgeek"
   },
   "metadata": {
-    "description": "Hand gesture confirmation plugin for Claude Code using MediaPipe + Glimpse"
+    "description": "Hand gesture confirmation plugin for Claude Code using MediaPipe + native WKWebView host"
   },
   "plugins": [
     {
       "name": "gesture-confirm",
       "source": "./plugins/gesture-confirm",
-      "description": "Gesture-based confirmation for Claude Code — thumbs up/fist for allow/deny, finger count 1-5 for option selection via MediaPipe hand tracking and Glimpse native windows",
-      "version": "1.0.0",
+      "description": "Gesture-based confirmation for Claude Code — thumbs up/fist for allow/deny, finger count 1-5 for option selection via MediaPipe hand tracking and native WKWebView host",
+      "version": "2.0.0",
       "author": {
         "name": "cloudgeek"
       },
       "category": "productivity",
-      "tags": ["gesture", "mediapipe", "camera", "confirmation", "glimpse"]
+      "tags": ["gesture", "mediapipe", "camera", "confirmation", "wkwebview"]
     }
   ]
 }

@@ -7,7 +7,7 @@ description: >-
   "手势确认", "手势选择", "手势识别确认", or when Claude needs user confirmation
   for plans, decisions, option selection, or any approval that benefits from
   a visual gesture-based interaction.
-version: 2.2.3
+version: 2.2.4
 ---
 
 # Gesture Confirm — Hand Gesture Confirmation & Selection via Native WKWebView + MediaPipe

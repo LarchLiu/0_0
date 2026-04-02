@@ -1,0 +1,9 @@
+{
+  "name": "gesture-confirm-scripts",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "glimpseui": "^0.3.7"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "name": "gesture-confirm",
+  "description": "Gesture-based confirmation for Claude Code — thumbs up/fist for allow/deny, finger count 1-5 for option selection via MediaPipe hand tracking and Glimpse native windows",
+  "author": {
+    "name": "cloudgeek"
+  }
+}

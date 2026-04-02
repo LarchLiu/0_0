@@ -1,0 +1,17 @@
+{
+  "description": "Gesture-based confirmation hook — opens a native camera window for hand gesture approval/denial",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/gesture-hook.sh",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}

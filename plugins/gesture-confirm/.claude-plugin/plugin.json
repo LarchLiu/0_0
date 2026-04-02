@@ -1,6 +1,6 @@
 {
   "name": "gesture-confirm",
-  "version": "2.2.2",
+  "version": "2.2.3",
   "description": "Gesture-based confirmation for Claude Code — OK gesture/fist for allow/deny, finger count 1-5 for option selection via MediaPipe hand tracking and native WKWebView host",
   "author": {
     "name": "cloudgeek"

@@ -1,0 +1,22 @@
+{
+  "name": "gesture-confirm-marketplace",
+  "owner": {
+    "name": "cloudgeek"
+  },
+  "metadata": {
+    "description": "Hand gesture confirmation plugin for Claude Code using MediaPipe + Glimpse"
+  },
+  "plugins": [
+    {
+      "name": "gesture-confirm",
+      "source": "./plugins/gesture-confirm",
+      "description": "Gesture-based confirmation for Claude Code — thumbs up/fist for allow/deny, finger count 1-5 for option selection via MediaPipe hand tracking and Glimpse native windows",
+      "version": "1.0.0",
+      "author": {
+        "name": "cloudgeek"
+      },
+      "category": "productivity",
+      "tags": ["gesture", "mediapipe", "camera", "confirmation", "glimpse"]
+    }
+  ]
+}

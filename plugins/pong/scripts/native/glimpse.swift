@@ -80,15 +80,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         let rect = NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight)
         window = GlimpseWindow(
             contentRect: rect,
-            styleMask: [.titled, .closable, .miniaturizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = config.title
-        window.center()
         window.delegate = self
+        window.center()
         window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        if #available(macOS 14.0, *) {
+            NSApp.activate()
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 
     private func setupWebView() {
@@ -225,8 +229,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     nonisolated func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         MainActor.assumeIsolated {
-            guard let body = message.body as? String,
-                  let data = body.data(using: .utf8),
+            guard let bodyString = message.body as? String,
+                  let data = bodyString.data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 log("Received invalid message from webview")
                 return

@@ -28,12 +28,21 @@ Running `npm install` in the scripts directory compiles that host binary.
 
 ## Execution Steps
 
-### Step 1 — Ensure the local host exists
+### Step 1 — Ensure the local host is up to date
 
 ```bash
 SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
-if [ ! -x "$SCRIPTS_DIR/native/glimpse" ]; then
-  cd "$SCRIPTS_DIR" && npm install
+BINARY="$SCRIPTS_DIR/native/glimpse"
+NEEDS_BUILD=0
+if [ ! -x "$BINARY" ]; then
+  NEEDS_BUILD=1
+else
+  for src in "$SCRIPTS_DIR"/native/glimpse.swift "$SCRIPTS_DIR"/native/Info.plist; do
+    [ "$src" -nt "$BINARY" ] && NEEDS_BUILD=1 && break
+  done
+fi
+if [ "$NEEDS_BUILD" -eq 1 ]; then
+  cd "$SCRIPTS_DIR" && npm run build
 fi
 ```
 

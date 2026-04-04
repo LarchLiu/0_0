@@ -90,6 +90,12 @@ const html = `
     inset: 0;
   }
 
+  #scene canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+  }
+
   .hud {
     position: absolute;
     inset: 18px 18px auto 18px;
@@ -179,6 +185,13 @@ const html = `
     grid-template-columns: minmax(300px, 380px) minmax(260px, 320px) minmax(320px, 1fr);
     gap: 16px;
     align-items: end;
+    transition: transform 0.35s ease, opacity 0.35s ease;
+  }
+
+  .footer.collapsed {
+    transform: translateY(calc(100% + 18px));
+    opacity: 0;
+    pointer-events: none;
   }
 
   .tracker {
@@ -380,6 +393,7 @@ const html = `
 <body>
   <div id="app">
     <div id="scene"></div>
+    <div id="debugToasts" style="position:fixed;top:60px;right:18px;z-index:9999;display:flex;flex-direction:column;gap:8px;max-width:480px;pointer-events:none;"></div>
 
     <div class="hud">
       <div class="panel brand">
@@ -403,7 +417,7 @@ const html = `
       </div>
     </div>
 
-    <div class="footer">
+    <div class="footer" id="footer">
       <div class="panel tracker">
         <div class="tracker-header">
           <strong>Hand Tracker</strong>
@@ -450,12 +464,27 @@ const html = `
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.min.js"><\/script>
+  <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.min.js"}}<\/script>
+  <script type="module">
+    import * as THREE from 'three';
+    window.THREE = THREE;
+    window.dispatchEvent(new Event('three-ready'));
+  <\/script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.min.js"><\/script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.min.js"><\/script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.min.js"><\/script>
 
   <script>
+    var debugToasts = document.getElementById('debugToasts');
+
+    function showDebugToast(tag, message) {
+      var el = document.createElement('div');
+      el.style.cssText = 'background:rgba(255,60,80,0.88);color:#fff;padding:10px 14px;border-radius:10px;font-size:12px;line-height:1.45;backdrop-filter:blur(8px);box-shadow:0 4px 20px rgba(0,0,0,0.4);pointer-events:auto;word-break:break-word;';
+      el.innerHTML = '<strong>[' + tag + ']</strong> ' + message;
+      debugToasts.appendChild(el);
+    }
+
+    function __pongBoot() {
     const sceneRoot = document.getElementById('scene');
     const subtitle = document.getElementById('subtitle');
     const playerScoreEl = document.getElementById('playerScore');
@@ -479,6 +508,7 @@ const html = `
     const pauseBtn = document.getElementById('pauseBtn');
     const resetBtn = document.getElementById('resetBtn');
     const exitBtn = document.getElementById('exitBtn');
+    const footer = document.getElementById('footer');
 
     const clamp = function(value, min, max) {
       return Math.max(min, Math.min(max, value));
@@ -534,7 +564,14 @@ const html = `
       keyboardRight: false,
     };
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    let renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    } catch (error) {
+      showDebugToast('WebGL', 'WebGLRenderer init failed: ' + (error && error.message ? error.message : String(error)));
+      throw error;
+    }
+
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     sceneRoot.appendChild(renderer.domElement);
@@ -740,6 +777,13 @@ const html = `
       chargePercent.textContent = String(Math.round(progress * 100)) + '%';
       chargeFill.style.transform = 'scaleX(' + progress + ')';
       trackerMeta.textContent = state.hasHand ? 'Landmarks live' : state.cameraMessage;
+
+      var ballInPlay = !state.waitingForServe && !state.paused && !state.matchWinner;
+      if (ballInPlay) {
+        footer.classList.add('collapsed');
+      } else {
+        footer.classList.remove('collapsed');
+      }
     }
 
     function setCameraFallback(titleText, detailText, stateText) {
@@ -1144,27 +1188,59 @@ const html = `
     }
 
     async function startTracking() {
-      if (!window.Hands || !window.Camera || !window.drawConnectors || !window.drawLandmarks) {
-        setCameraFallback(
-          'Tracking scripts unavailable',
-          'The game will keep running with keyboard and on-screen controls.',
-          'Tracking offline'
-        );
-        updateStatus(0);
-        return;
-      }
-
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         setCameraFallback(
           'Camera API unavailable',
           'This host cannot access camera APIs on this system.',
           'Camera unavailable'
         );
+        showDebugToast('Camera', 'navigator.mediaDevices.getUserMedia is not available in this WebView context.');
         updateStatus(0);
         return;
       }
 
       const inputCount = await getVideoInputCount();
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: 640,
+            height: 480,
+            facingMode: 'user',
+          }
+        });
+
+        video.srcObject = stream;
+        await video.play();
+        clearCameraFallback();
+        state.cameraState = 'ready';
+        state.cameraMessage = 'Camera ready';
+        updateStatus(0);
+      } catch (error) {
+        const info = classifyCameraError(error, inputCount);
+        setCameraFallback(info.title, info.detail, info.state);
+        showDebugToast('Camera', (error && error.name ? error.name + ': ' : '') + (error && error.message ? error.message : String(error)));
+        updateStatus(0);
+        return;
+      }
+
+      const hasHands = typeof Hands === 'function';
+      const hasCameraHelper = typeof Camera === 'function';
+      const hasDrawing =
+        typeof drawConnectors === 'function' &&
+        typeof drawLandmarks === 'function' &&
+        typeof HAND_CONNECTIONS !== 'undefined';
+
+      if (!hasHands) {
+        state.cameraState = 'ready';
+        state.cameraMessage = 'Camera live / tracking offline';
+        trackingBadge.textContent = 'Tracking offline';
+        trackerMeta.textContent = 'Camera live';
+        helperText.innerHTML = '<strong>Camera is live.</strong> Hand tracking scripts did not load, so use keyboard or buttons.';
+        showDebugToast('MediaPipe', 'Hands=' + hasHands + ' Camera=' + hasCameraHelper + ' Drawing=' + hasDrawing + '. CDN scripts may have failed to load.');
+        updateStatus(0);
+        return;
+      }
 
       const hands = new Hands({
         locateFile: function(file) {
@@ -1189,8 +1265,10 @@ const html = `
 
           const landmarks = results.multiHandLandmarks[0];
           const handedness = results.multiHandedness[0].label;
-          drawConnectors(overlayCtx, landmarks, HAND_CONNECTIONS, { color: 'rgba(86, 240, 255, 0.42)', lineWidth: 2 });
-          drawLandmarks(overlayCtx, landmarks, { color: '#cfffff', lineWidth: 1, radius: 3 });
+          if (hasDrawing) {
+            drawConnectors(overlayCtx, landmarks, HAND_CONNECTIONS, { color: 'rgba(86, 240, 255, 0.42)', lineWidth: 2 });
+            drawLandmarks(overlayCtx, landmarks, { color: '#cfffff', lineWidth: 1, radius: 3 });
+          }
 
           const palmX = getPalmCenterX(landmarks);
           const mirroredX = 1 - palmX;
@@ -1200,7 +1278,7 @@ const html = `
           state.lastTrackedAt = performance.now();
           state.hasHand = true;
           state.cameraState = 'live';
-          state.cameraMessage = 'Tracking live';
+          state.cameraMessage = hasDrawing ? 'Tracking live' : 'Tracking live / overlay offline';
 
           onGestureAction(state.currentGesture, state.lastTrackedAt);
         } else {
@@ -1213,22 +1291,7 @@ const html = `
         }
       });
 
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            width: 640,
-            height: 480,
-            facingMode: 'user',
-          }
-        });
-
-        video.srcObject = stream;
-        await video.play();
-        clearCameraFallback();
-        state.cameraState = 'ready';
-        state.cameraMessage = 'Camera ready';
-        updateStatus(0);
-
+      if (hasCameraHelper) {
         const cam = new Camera(video, {
           onFrame: async function() {
             await hands.send({ image: video });
@@ -1238,18 +1301,59 @@ const html = `
         });
 
         cam.start();
-      } catch (error) {
-        const info = classifyCameraError(error, inputCount);
-        setCameraFallback(info.title, info.detail, info.state);
-        updateStatus(0);
+        return;
       }
+
+      let trackingActive = true;
+      const processFrame = async function() {
+        if (!trackingActive) return;
+        if (!video.srcObject) {
+          trackingActive = false;
+          return;
+        }
+
+        if (video.readyState >= 2) {
+          await hands.send({ image: video });
+        }
+
+        requestAnimationFrame(function() {
+          processFrame().catch(function(error) {
+            console.error('Manual tracking loop failed:', error);
+          });
+        });
+      };
+
+      processFrame().catch(function(error) {
+        console.error('Manual tracking bootstrap failed:', error);
+      });
     }
+
+    window.addEventListener('error', function(event) {
+      showDebugToast('Error', (event.filename || '') + ':' + (event.lineno || '') + ' ' + (event.message || ''));
+    });
+
+    window.addEventListener('unhandledrejection', function(event) {
+      var reason = event.reason;
+      showDebugToast('Promise', reason && reason.message ? reason.message : String(reason));
+    });
 
     updateScoreboard();
     updateStatus(0);
     hardReset();
     startTracking();
     requestAnimationFrame(frame);
+    }
+
+    if (window.THREE) {
+      __pongBoot();
+    } else {
+      window.addEventListener('three-ready', __pongBoot, { once: true });
+      setTimeout(function() {
+        if (!window.THREE) {
+          showDebugToast('3D', 'three.js ESM module failed to load after 10s. Check network or CSP.');
+        }
+      }, 10000);
+    }
   <\/script>
 </body>
 </html>

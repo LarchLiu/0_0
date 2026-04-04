@@ -1,0 +1,92 @@
+import { EventEmitter } from 'node:events';
+import { spawn } from 'node:child_process';
+import { createInterface } from 'node:readline';
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const BINARY = join(__dirname, 'glimpse');
+
+class GlimpseWindow extends EventEmitter {
+  #proc;
+  #closed = false;
+  #pendingHTML = null;
+
+  constructor(proc, initialHTML) {
+    super();
+    this.#proc = proc;
+    this.#pendingHTML = initialHTML;
+
+    proc.stdin.on('error', () => {});
+
+    const rl = createInterface({ input: proc.stdout, crlfDelay: Infinity });
+    rl.on('line', (line) => {
+      let message;
+      try {
+        message = JSON.parse(line);
+      } catch {
+        this.emit('error', new Error(`Malformed protocol line: ${line}`));
+        return;
+      }
+
+      switch (message.type) {
+        case 'ready':
+          if (this.#pendingHTML !== null) {
+            this.setHTML(this.#pendingHTML);
+            this.#pendingHTML = null;
+          } else {
+            this.emit('ready');
+          }
+          break;
+        case 'message':
+          this.emit('message', message.data);
+          break;
+        case 'closed':
+          if (!this.#closed) {
+            this.#closed = true;
+            this.emit('closed');
+          }
+          break;
+        default:
+          break;
+      }
+    });
+
+    proc.on('error', (error) => this.emit('error', error));
+    proc.on('exit', () => {
+      if (!this.#closed) {
+        this.#closed = true;
+        this.emit('closed');
+      }
+    });
+  }
+
+  #write(payload) {
+    if (this.#closed) return;
+    this.#proc.stdin.write(JSON.stringify(payload) + '\n');
+  }
+
+  setHTML(html) {
+    this.#write({ type: 'html', html: Buffer.from(html).toString('base64') });
+  }
+
+  close() {
+    this.#write({ type: 'close' });
+  }
+}
+
+export function open(html, options = {}) {
+  if (!existsSync(BINARY)) {
+    throw new Error("Pong host binary not found. Run 'npm install' in plugins/pong/scripts.");
+  }
+
+  const args = [];
+  if (options.width != null) args.push('--width', String(options.width));
+  if (options.height != null) args.push('--height', String(options.height));
+  if (options.title != null) args.push('--title', options.title);
+  if (options.autoClose) args.push('--auto-close');
+
+  const proc = spawn(BINARY, args, { stdio: ['pipe', 'pipe', 'inherit'] });
+  return new GlimpseWindow(proc, html);
+}

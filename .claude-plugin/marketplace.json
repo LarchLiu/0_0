@@ -17,6 +17,17 @@
       },
       "category": "productivity",
       "tags": ["gesture", "mediapipe", "camera", "confirmation", "wkwebview"]
+    },
+    {
+      "name": "pong",
+      "source": "./plugins/pong",
+      "description": "Gesture-controlled Pong for Claude Code using MediaPipe Hands, three.js, and a native macOS WKWebView host",
+      "version": "0.1.0",
+      "author": {
+        "name": "cloudgeek"
+      },
+      "category": "games",
+      "tags": ["gesture", "mediapipe", "threejs", "camera", "pong"]
     }
   ]
 }

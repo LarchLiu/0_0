@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDisplayName</key>
+  <string>Pong Host</string>
+  <key>CFBundleExecutable</key>
+  <string>glimpse</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.cloudgeek.pong.host</string>
+  <key>CFBundleName</key>
+  <string>Pong Host</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>1.0.0</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>NSCameraUsageDescription</key>
+  <string>Pong needs camera access to track your hand and control the paddle.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Pong requests microphone permission only when WKWebView asks for combined media capture. Audio is not used by the plugin.</string>
+</dict>
+</plist>

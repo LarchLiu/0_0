@@ -433,6 +433,13 @@ const html = `
     <div class="map-select-title">SELECT TRACK</div>
     <div class="map-select-subtitle">Choose your race circuit</div>
     <div class="map-cards">
+      <div class="map-card" data-map="0" onclick="selectMap(0)" style="border-color: rgba(148,164,200,0.3)">
+        <div class="map-num" style="color: var(--muted); text-shadow: none; font-size:36px">T</div>
+        <div class="map-name">Test Track</div>
+        <div class="map-desc">Open field. No track, no barriers, no opponents.</div>
+        <div class="map-desc" style="margin-top:6px; font-size:16px">🏁</div>
+        <div class="map-preview"><canvas id="map-preview-0" width="200" height="100"></canvas></div>
+      </div>
       <div class="map-card" data-map="1" onclick="selectMap(1)">
         <div class="map-num">1</div>
         <div class="map-name">Neon Circuit</div>
@@ -455,11 +462,31 @@ const html = `
         <div class="map-preview"><canvas id="map-preview-3" width="200" height="100"></canvas></div>
       </div>
     </div>
-    <div class="map-select-hint">Press <strong>1</strong>, <strong>2</strong>, or <strong>3</strong> to select</div>
+    <div class="map-select-hint">Press <strong>T</strong> for test, or <strong>1</strong>, <strong>2</strong>, <strong>3</strong> to select</div>
     <div class="map-select-gesture-hint" id="gesture-select-hint" style="display:none">or hold ☝️ for 1 &nbsp; ✌️ for 2 &nbsp; 🤟 for 3</div>
   </div>
 
+  <div id="debugToasts" style="position:fixed;top:60px;right:18px;z-index:9999;display:flex;flex-direction:column;gap:8px;max-width:480px;pointer-events:none;"></div>
+
+  <script>
+    var debugToasts = document.getElementById('debugToasts');
+    function showDebugToast(tag, message) {
+      var el = document.createElement('div');
+      el.style.cssText = 'background:rgba(255,60,80,0.88);color:#fff;padding:10px 14px;border-radius:10px;font-size:12px;line-height:1.45;backdrop-filter:blur(8px);box-shadow:0 4px 20px rgba(0,0,0,0.4);pointer-events:auto;word-break:break-word;';
+      el.innerHTML = '<strong>[' + tag + ']</strong> ' + message;
+      debugToasts.appendChild(el);
+    }
+    window.addEventListener('error', function(event) {
+      showDebugToast('Error', (event.filename || '') + ':' + (event.lineno || '') + ' ' + (event.message || ''));
+    });
+    window.addEventListener('unhandledrejection', function(event) {
+      var reason = event.reason;
+      showDebugToast('Promise', reason && reason.message ? reason.message : String(reason));
+    });
+  <\/script>
+
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.min.js"><\/script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1657299874/face_mesh.js"><\/script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.min.js"><\/script>
 
   <script type="importmap">
@@ -525,6 +552,18 @@ const html = `
        TRACK MAPS — 3 selectable circuits
        ================================================================ */
     const TRACK_MAPS = {
+      0: { // Test — free roam, no barriers, no AI, no track
+        name: 'Test Track',
+        noBarriers: true,
+        noAI: true,
+        freeRoam: true,
+        points: [
+          [0, 0, -60], [30, 0, -55], [50, 0, -30], [55, 0, 0],
+          [45, 0, 30], [20, 0, 50], [0, 0, 55],
+          [-20, 0, 50], [-45, 0, 30], [-55, 0, 0],
+          [-50, 0, -30], [-30, 0, -55],
+        ],
+      },
       1: { // Neon Circuit — smooth, balanced
         name: 'Neon Circuit',
         points: [
@@ -554,7 +593,8 @@ const html = `
       },
     };
 
-    let selectedMap = 0; // 0 = none selected yet
+    let selectedMap = -1; // -1 = none selected yet
+    let currentMapDef = null;
     let trackCurve = null;
     let trackPoints = [];
     let trackTangents = [];
@@ -565,6 +605,7 @@ const html = `
 
     function buildTrackFromMap(mapId) {
       const mapDef = TRACK_MAPS[mapId];
+      currentMapDef = mapDef;
       const controlPoints = mapDef.points.map(p => new THREE.Vector3(p[0], p[1], p[2]));
       trackCurve = new THREE.CatmullRomCurve3(controlPoints, true, 'catmullrom', 0.6);
 
@@ -608,6 +649,25 @@ const html = `
       ctx.clearRect(0, 0, w, h);
 
       const mapDef = TRACK_MAPS[mapId];
+
+      // Free roam — show "FREE ROAM" text instead of a track
+      if (mapDef.freeRoam) {
+        ctx.fillStyle = '#94a4c8';
+        ctx.font = 'bold 14px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('FREE ROAM', w / 2, h / 2);
+        // Draw a subtle grid
+        ctx.strokeStyle = 'rgba(42, 48, 80, 0.5)';
+        ctx.lineWidth = 0.5;
+        for (let x = 20; x < w; x += 20) {
+          ctx.beginPath(); ctx.moveTo(x, 10); ctx.lineTo(x, h - 10); ctx.stroke();
+        }
+        for (let y = 10; y < h; y += 20) {
+          ctx.beginPath(); ctx.moveTo(20, y); ctx.lineTo(w - 20, y); ctx.stroke();
+        }
+        return;
+      }
       const pts = mapDef.points.map(p => new THREE.Vector3(p[0], p[1], p[2]));
       const curve = new THREE.CatmullRomCurve3(pts, true, 'catmullrom', 0.6);
       const samples = 200;
@@ -697,6 +757,23 @@ const html = `
        BUILD TRACK MESHES
        ================================================================ */
     function buildTrackMeshes(scene) {
+      const isFreeRoam = currentMapDef && currentMapDef.freeRoam;
+
+      // In free-roam mode, skip road, dashes, barriers, start line — just add a few ambient lights
+      if (isFreeRoam) {
+        const lights = [];
+        for (let i = 0; i < 8; i++) {
+          const angle = (i / 8) * Math.PI * 2;
+          const radius = 80;
+          const color = i % 2 === 0 ? COLORS.barrier : COLORS.barrierR;
+          const light = new THREE.PointLight(color, 3, 60, 1.5);
+          light.position.set(Math.cos(angle) * radius, 3, Math.sin(angle) * radius);
+          scene.add(light);
+          lights.push(light);
+        }
+        return lights;
+      }
+
       // Road surface
       const roadVerts = [];
       const roadIndices = [];
@@ -735,7 +812,8 @@ const html = `
         scene.add(dash);
       }
 
-      // Barriers
+      // Barriers (skip for test track)
+      if (!currentMapDef || !currentMapDef.noBarriers) {
       const barrierH = 1.2;
       const barrierGeo = new THREE.BoxGeometry(0.3, barrierH, 0.6);
       const leftMat = new THREE.MeshStandardMaterial({
@@ -766,6 +844,7 @@ const html = `
         rb.rotation.y = rotY;
         scene.add(rb);
       }
+      } // end barriers
 
       // Start/finish line
       const sfGeo = new THREE.PlaneGeometry(TRACK_WIDTH, 2);
@@ -911,6 +990,11 @@ const html = `
         particlePositions[i * 3 + 1] += particleVelocities[i].y * dt;
         particlePositions[i * 3 + 2] += particleVelocities[i].z * dt;
         particleVelocities[i].y -= 4 * dt; // gravity
+        // Clamp above ground
+        if (particlePositions[i * 3 + 1] < 0.15) {
+          particlePositions[i * 3 + 1] = 0.15;
+          particleVelocities[i].y = Math.abs(particleVelocities[i].y) * 0.3;
+        }
         const frac = particleLife[i] / particleMaxLife[i];
         particleSizes[i] *= (0.95 + 0.05 * frac);
       }
@@ -930,6 +1014,7 @@ const html = `
         blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
       });
       particleSystem = new THREE.Points(particleGeometry, pMat);
+      particleSystem.frustumCulled = false;
       scene.add(particleSystem);
     }
 
@@ -1020,8 +1105,9 @@ const html = `
         racer.speed -= BRAKING * racer.brakeInput * dt;
       }
 
-      // Friction
-      const fric = racer.onTrack ? FRICTION : OFF_TRACK_FRICTION;
+      // Friction (free roam always uses normal friction)
+      const isFreeRoam2 = currentMapDef && currentMapDef.freeRoam;
+      const fric = (isFreeRoam2 || racer.onTrack) ? FRICTION : OFF_TRACK_FRICTION;
       if (racer.speed > 0) {
         racer.speed = Math.max(0, racer.speed - fric * dt);
       } else {
@@ -1054,7 +1140,8 @@ const html = `
 
       // Track boundary
       racer.onTrack = isOnTrack(racer.position);
-      if (!racer.onTrack) {
+      const isFR = currentMapDef && currentMapDef.freeRoam;
+      if (!isFR && !racer.onTrack) {
         const { point, normal } = getClosestTrackPoint(racer.position);
         const dx = racer.position.x - point.x;
         const dz = racer.position.z - point.z;
@@ -1244,6 +1331,10 @@ const html = `
       gestureBoost: false,
       hasHand: false,
       lastHandTime: 0,
+      // head tracking
+      headTilt: 0,    // -1 (left) ~ 0 (center) ~ 1 (right)
+      hasFace: false,
+      lastFaceTime: 0,
     };
 
     // Use document-level listeners + e.key for WKWebView compatibility
@@ -1256,6 +1347,7 @@ const html = `
       else if (k === ' ' || k === 'Spacebar') { input.boost = true; e.preventDefault(); }
       else if (k === 'r' || k === 'R') { restartRace(); }
       else if (k === 'Escape') { exitGame(); }
+      else if ((k === 't' || k === 'T' || k === '0') && raceState === 'mapSelect') { window.selectMap(0); }
       else if (k === '1' && raceState === 'mapSelect') { window.selectMap(1); }
       else if (k === '2' && raceState === 'mapSelect') { window.selectMap(2); }
       else if (k === '3' && raceState === 'mapSelect') { window.selectMap(3); }
@@ -1275,11 +1367,15 @@ const html = `
     document.addEventListener('click', () => document.body.focus());
 
     function applyInput(racer) {
-      const useGesture = input.hasHand && (performance.now() - input.lastHandTime < 300);
+      const now = performance.now();
+      const useGesture = (input.hasHand && (now - input.lastHandTime < 300)) ||
+                         (input.hasFace && (now - input.lastFaceTime < 300));
 
       if (useGesture) {
-        racer.steeringInput = input.gestureSteer;
-        racer.throttleInput = input.gestureThrottle ? 1 : 0.3;
+        // Head tilt → steering
+        racer.steeringInput = input.headTilt;
+        // Open hand → throttle, no hand → coast (0), fist → brake
+        racer.throttleInput = input.gestureThrottle ? 1 : 0;
         racer.brakeInput = input.gestureBrake ? 1 : 0;
         racer.isBoosting = input.gestureBoost && racer.boostFuel > 0;
       } else {
@@ -1348,11 +1444,12 @@ const html = `
           return;
         }
 
-        // 4. Camera available — init MediaPipe
+        // 4. Camera available — init MediaPipe Hands + Face Mesh
         camStatusText.textContent = 'Loading...';
 
         const overlayCtx = camOverlay.getContext('2d');
 
+        // -- Hands --
         const hands = new Hands({
           locateFile: function(file) {
             return 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/' + file;
@@ -1366,7 +1463,7 @@ const html = `
         });
 
         hands.onResults(function(results) {
-          // Draw hand on overlay canvas
+          // Clear overlay — will be redrawn by both hands and face callbacks
           camOverlay.width = camVideo.videoWidth || 320;
           camOverlay.height = camVideo.videoHeight || 240;
           overlayCtx.clearRect(0, 0, camOverlay.width, camOverlay.height);
@@ -1427,24 +1524,94 @@ const html = `
 
             camDot.classList.add('active');
             camStatusText.textContent = 'Tracking';
-            camGesture.textContent = count > 0 ? \`\${count} finger\${count > 1 ? 's' : ''}\` : (allClosed ? 'Fist' : allOpen ? 'Open' : '');
+            // Show hand gesture + head tilt
+            const handLabel = count > 0 ? \`\${count} finger\${count > 1 ? 's' : ''}\` : (allClosed ? 'Fist' : allOpen ? 'Open' : '');
+            const headLabel = input.hasFace ? (input.headTilt < -0.15 ? ' | Head L' : input.headTilt > 0.15 ? ' | Head R' : ' | Head -') : '';
+            camGesture.textContent = handLabel + headLabel;
           } else {
             input.hasHand = false;
             detectedFingerCount = 0;
             fingerCountStable = 0;
             camDot.classList.remove('active');
-            camStatusText.textContent = 'No hand';
-            camGesture.textContent = '';
+            camStatusText.textContent = input.hasFace ? 'Face only' : 'No hand';
+            const headLabel2 = input.hasFace ? (input.headTilt < -0.15 ? 'Head L' : input.headTilt > 0.15 ? 'Head R' : 'Head -') : '';
+            camGesture.textContent = headLabel2;
             // Clear overlay
             overlayCtx.clearRect(0, 0, camOverlay.width, camOverlay.height);
           }
         });
 
-        const mpCamera = new Camera(camVideo, {
-          onFrame: async function() { await hands.send({ image: camVideo }); },
-          width: 320, height: 240,
-        });
-        mpCamera.start();
+        // -- Face Mesh (head tilt detection) --
+        let faceMeshReady = false;
+        if (typeof FaceMesh === 'function') {
+          const faceMesh = new FaceMesh({
+            locateFile: function(file) {
+              return 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1657299874/' + file;
+            }
+          });
+          faceMesh.setOptions({
+            maxNumFaces: 1,
+            refineLandmarks: false,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5,
+          });
+
+          faceMesh.onResults(function(faceResults) {
+            const ow = camOverlay.width || 320;
+            const oh = camOverlay.height || 240;
+
+            if (faceResults.multiFaceLandmarks && faceResults.multiFaceLandmarks.length > 0) {
+              const fl = faceResults.multiFaceLandmarks[0];
+              input.hasFace = true;
+              input.lastFaceTime = performance.now();
+
+              // Head roll from eye corners: landmark 33 (L eye outer), 263 (R eye outer)
+              const leftEye = fl[33];
+              const rightEye = fl[263];
+              const dx = rightEye.x - leftEye.x;
+              const dy = rightEye.y - leftEye.y;
+              const rollDeg = Math.atan2(dy, dx) * (180 / Math.PI);
+
+              // Dead zone: ignore tilt < 8 degrees, map 8~35 degrees to 0~1
+              const TILT_DEAD = 8;
+              const TILT_MAX = 35;
+              let tilt = 0;
+              if (Math.abs(rollDeg) > TILT_DEAD) {
+                const sign = rollDeg > 0 ? 1 : -1;
+                tilt = sign * Math.min(1, (Math.abs(rollDeg) - TILT_DEAD) / (TILT_MAX - TILT_DEAD));
+              }
+              input.headTilt = THREE.MathUtils.lerp(input.headTilt, tilt, 0.3);
+
+              // Draw eye-line on overlay to show tilt
+              drawHeadTiltIndicator(overlayCtx, fl, ow, oh, rollDeg);
+            } else {
+              input.hasFace = false;
+              input.headTilt = THREE.MathUtils.lerp(input.headTilt, 0, 0.15);
+            }
+          });
+
+          faceMeshReady = true;
+
+          // -- Single Camera driving both Hands + FaceMesh --
+          const mpCamera = new Camera(camVideo, {
+            onFrame: async function() {
+              await Promise.all([
+                hands.send({ image: camVideo }),
+                faceMesh.send({ image: camVideo }),
+              ]);
+            },
+            width: 320, height: 240,
+          });
+          mpCamera.start();
+        } else {
+          // FaceMesh not available — run Hands only
+          const mpCamera = new Camera(camVideo, {
+            onFrame: async function() { await hands.send({ image: camVideo }); },
+            width: 320, height: 240,
+          });
+          mpCamera.start();
+        }
+
         mediapipeLoaded = true;
         camStatusText.textContent = 'Ready';
         gestureHint.style.display = '';
@@ -1479,6 +1646,39 @@ const html = `
         ctx.arc(lm[i].x * w, lm[i].y * h, 3, 0, Math.PI * 2);
         ctx.fillStyle = i === 0 ? '#ffc15a' : '#56f0ff';
         ctx.fill();
+      }
+    }
+
+    function drawHeadTiltIndicator(ctx, fl, w, h, rollDeg) {
+      // Draw eye-to-eye line to visualize head tilt
+      const le = fl[33], re = fl[263], nose = fl[1];
+      const lx = le.x * w, ly = le.y * h;
+      const rx = re.x * w, ry = re.y * h;
+      const nx = nose.x * w, ny = nose.y * h;
+
+      // Eye line
+      ctx.strokeStyle = Math.abs(rollDeg) > 8 ? '#ff5ea9' : '#8dff65';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(lx, ly);
+      ctx.lineTo(rx, ry);
+      ctx.stroke();
+
+      // Eye dots
+      ctx.fillStyle = '#ffc15a';
+      ctx.beginPath(); ctx.arc(lx, ly, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(rx, ry, 3, 0, Math.PI * 2); ctx.fill();
+
+      // Nose dot
+      ctx.fillStyle = '#56f0ff';
+      ctx.beginPath(); ctx.arc(nx, ny, 3, 0, Math.PI * 2); ctx.fill();
+
+      // Tilt direction arrow
+      if (Math.abs(rollDeg) > 8) {
+        const dir = rollDeg > 0 ? 'R' : 'L';
+        ctx.fillStyle = '#ff5ea9';
+        ctx.font = 'bold 14px monospace';
+        ctx.fillText(dir, nx - 4, ny - 12);
       }
     }
 
@@ -1658,6 +1858,7 @@ const html = `
       document.getElementById('results-overlay').style.display = 'none';
       document.getElementById('countdown-overlay').style.display = 'none';
       // Draw previews
+      drawTrackPreview('map-preview-0', 0);
       drawTrackPreview('map-preview-1', 1);
       drawTrackPreview('map-preview-2', 2);
       drawTrackPreview('map-preview-3', 3);
@@ -1672,6 +1873,15 @@ const html = `
       wrongWayTimer = 0;
 
       document.getElementById('map-select-overlay').style.display = 'none';
+
+      // Show/hide AI racers based on map config
+      const hideAI = currentMapDef && currentMapDef.noAI;
+      for (const r of racers) {
+        if (!r.isPlayer) {
+          r.mesh.visible = !hideAI;
+        }
+      }
+
       placeRacersOnGrid();
 
       document.getElementById('results-overlay').style.display = 'none';
@@ -1724,7 +1934,10 @@ const html = `
     function showResults() {
       raceState = 'finished';
 
-      const sorted = [...racers].sort((a, b) => a.finishTime - b.finishTime);
+      const soloMode = currentMapDef && currentMapDef.noAI;
+      const sorted = soloMode
+        ? racers.filter(r => r.isPlayer)
+        : [...racers].sort((a, b) => a.finishTime - b.finishTime);
       const overlay = document.getElementById('results-overlay');
       const panel = document.getElementById('results-panel');
       const title = document.getElementById('results-title');
@@ -1734,8 +1947,13 @@ const html = `
       const medals = ['1st', '2nd', '3rd', '4th', '5th'];
       const titleColors = [null, 'var(--lime)', 'var(--cyan)', 'var(--amber)', 'var(--muted)', 'var(--muted)'];
 
-      title.textContent = playerPos === 1 ? 'VICTORY!' : \`You finished \${medals[playerPos - 1]}!\`;
-      title.style.color = titleColors[playerPos];
+      if (soloMode) {
+        title.textContent = 'PRACTICE COMPLETE!';
+        title.style.color = 'var(--cyan)';
+      } else {
+        title.textContent = playerPos === 1 ? 'VICTORY!' : \`You finished \${medals[playerPos - 1]}!\`;
+        title.style.color = titleColors[playerPos];
+      }
 
       rows.innerHTML = sorted.map((r, i) => {
         const colorHex = '#' + new THREE.Color(r.color).getHexString();
@@ -1786,21 +2004,28 @@ const html = `
     }
 
     function updateHUD() {
-      const lapDisplay = Math.min(Math.max(player.lap, 1), TOTAL_LAPS);
-      document.getElementById('hud-lap').textContent = \`\${lapDisplay}/\${TOTAL_LAPS}\`;
-      document.getElementById('hud-time').textContent = formatTime(raceTime);
+      const isFreeRoam = currentMapDef && currentMapDef.freeRoam;
 
-      const ranking = getRanking();
-      const pos = ranking.findIndex(r => r.isPlayer) + 1;
-      document.getElementById('hud-pos').textContent = \`\${pos} / \${racers.length}\`;
+      if (isFreeRoam) {
+        document.getElementById('hud-lap').textContent = 'FREE';
+        document.getElementById('hud-pos').textContent = 'SOLO';
+      } else {
+        const lapDisplay = Math.min(Math.max(player.lap, 1), TOTAL_LAPS);
+        document.getElementById('hud-lap').textContent = \`\${lapDisplay}/\${TOTAL_LAPS}\`;
+        const ranking = getRanking();
+        const pos = ranking.findIndex(r => r.isPlayer) + 1;
+        const soloMode = currentMapDef && currentMapDef.noAI;
+        document.getElementById('hud-pos').textContent = soloMode ? 'SOLO' : \`\${pos} / \${racers.length}\`;
+      }
+      document.getElementById('hud-time').textContent = formatTime(raceTime);
 
       const displaySpeed = Math.abs(Math.round(player.speed * 2.2));
       document.getElementById('hud-speed').textContent = displaySpeed;
       document.getElementById('speed-fill').style.width = \`\${Math.min(100, (player.speed / MAX_SPEED) * 100)}%\`;
       document.getElementById('boost-fill').style.width = \`\${(player.boostFuel / BOOST_MAX_FUEL) * 100}%\`;
 
-      // Wrong way
-      if (raceState === 'racing' && detectWrongWay(player)) {
+      // Wrong way (skip in free roam)
+      if (!isFreeRoam && raceState === 'racing' && detectWrongWay(player)) {
         wrongWayTimer = 1.5;
       }
       if (wrongWayTimer > 0) {
@@ -1834,7 +2059,56 @@ const html = `
       ctx.fillStyle = 'rgba(4, 5, 11, 0.9)';
       ctx.fillRect(0, 0, w, h);
 
-      // Find bounds of track
+      const isFreeRoam = currentMapDef && currentMapDef.freeRoam;
+
+      if (isFreeRoam) {
+        // Free roam: center minimap on player, show grid
+        const viewRange = 200;
+        const scale = w / viewRange;
+        const px = player.position.x;
+        const pz = player.position.z;
+
+        // Draw grid lines
+        ctx.strokeStyle = 'rgba(42, 48, 80, 0.5)';
+        ctx.lineWidth = 0.5;
+        const gridStep = 20;
+        const startX = Math.floor((px - viewRange / 2) / gridStep) * gridStep;
+        const startZ = Math.floor((pz - viewRange / 2) / gridStep) * gridStep;
+        for (let gx = startX; gx < px + viewRange / 2; gx += gridStep) {
+          const sx = (gx - px + viewRange / 2) * scale;
+          ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, h); ctx.stroke();
+        }
+        for (let gz = startZ; gz < pz + viewRange / 2; gz += gridStep) {
+          const sy = (gz - pz + viewRange / 2) * scale;
+          ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(w, sy); ctx.stroke();
+        }
+
+        // Player dot at center
+        const colorHex = '#' + new THREE.Color(player.color).getHexString();
+        ctx.beginPath();
+        ctx.arc(w / 2, h / 2, 5, 0, Math.PI * 2);
+        ctx.fillStyle = colorHex;
+        ctx.fill();
+        ctx.strokeStyle = colorHex;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(w / 2, h / 2, 8, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Draw direction indicator
+        const dirX = -Math.sin(player.rotation);
+        const dirZ = -Math.cos(player.rotation);
+        const arrowLen = 12;
+        ctx.strokeStyle = colorHex;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(w / 2, h / 2);
+        ctx.lineTo(w / 2 + dirX * arrowLen, h / 2 + dirZ * arrowLen);
+        ctx.stroke();
+        return;
+      }
+
+      // Normal track minimap
       let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
       for (const p of trackPoints) {
         minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
@@ -1864,6 +2138,7 @@ const html = `
 
       // Draw racers as dots
       for (const r of racers) {
+        if (!r.mesh.visible) continue;
         const colorHex = '#' + new THREE.Color(r.color).getHexString();
         const x = tx(r.position.x);
         const y = ty(r.position.z);
@@ -1945,6 +2220,13 @@ const html = `
 
         case 'countdown':
           updateCountdown(dt);
+          // If countdown finished and we're still here, hide overlay
+          if (raceState === 'racing') {
+            document.getElementById('countdown-overlay').style.display = 'none';
+            setTimeout(() => {
+              document.getElementById('controls-hint').classList.add('hidden');
+            }, 5000);
+          }
           updateCamera(dt);
           // Animate track lights during countdown
           trackLights.forEach((l, i) => {
@@ -1961,21 +2243,27 @@ const html = `
           applyInput(player);
 
           // AI — always give throttle, let AI logic control it
-          for (const r of racers) {
-            if (!r.isPlayer && !r.finished) updateAI(r, racers, dt);
+          const skipAI = currentMapDef && currentMapDef.noAI;
+          if (!skipAI) {
+            for (const r of racers) {
+              if (!r.isPlayer && !r.finished) updateAI(r, racers, dt);
+            }
           }
 
           // Physics for all
           for (const r of racers) {
-            if (!r.finished) updateRacerPhysics(r, dt);
+            if (!r.finished && (r.isPlayer || !skipAI)) updateRacerPhysics(r, dt);
           }
 
           // Collisions
-          handleCollisions(racers);
+          if (!skipAI) handleCollisions(racers);
 
-          // Laps
-          for (const r of racers) {
-            updateLaps(r, raceTime);
+          // Laps (skip in free roam — no finish)
+          const isFreeRoam = currentMapDef && currentMapDef.freeRoam;
+          if (!isFreeRoam) {
+            for (const r of racers) {
+              if (r.isPlayer || !skipAI) updateLaps(r, raceTime);
+            }
           }
 
           // Camera
@@ -1986,7 +2274,7 @@ const html = `
           if (exhaustTimer > 0.06) {
             exhaustTimer = 0;
             for (const r of racers) {
-              if (r.speed > 10) emitExhaust(r);
+              if (r.speed > 10 && r.mesh.visible) emitExhaust(r);
               if (r.isBoosting) emitBoostFlame(r);
             }
           }
@@ -2009,8 +2297,9 @@ const html = `
         case 'finished':
           updateCamera(dt);
           updateParticles(dt);
-          // Slow down all racers
+          // Slow down all visible racers
           for (const r of racers) {
+            if (!r.mesh.visible) continue;
             r.throttleInput = 0;
             r.brakeInput = 0.3;
             r.isBoosting = false;

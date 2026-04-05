@@ -1379,10 +1379,14 @@ const html = `
             // Draw hand landmarks on overlay
             drawHandLandmarks(overlayCtx, lm, camOverlay.width, camOverlay.height);
 
-            // Steering from palm center
+            // Steering from palm center — with dead zone to prevent drift
             const palmCenterX = (lm[0].x + lm[5].x + lm[9].x + lm[13].x + lm[17].x) / 5;
-            const steer = THREE.MathUtils.clamp((palmCenterX - 0.5) * -2.5, -1, 1);
-            input.gestureSteer = THREE.MathUtils.lerp(input.gestureSteer, steer, 0.3);
+            const DEAD_ZONE = 0.08; // ignore small offsets from center
+            let offset = palmCenterX - 0.5;
+            if (Math.abs(offset) < DEAD_ZONE) offset = 0;
+            else offset = offset > 0 ? offset - DEAD_ZONE : offset + DEAD_ZONE;
+            const steer = THREE.MathUtils.clamp(offset * -3.0, -1, 1);
+            input.gestureSteer = THREE.MathUtils.lerp(input.gestureSteer, steer, 0.25);
 
             // Finger classification
             const fingers = classifyFingers(lm);
@@ -1450,7 +1454,7 @@ const html = `
     }
 
     function drawHandLandmarks(ctx, lm, w, h) {
-      // Draw connections
+      // Draw connections — CSS scaleX(-1) already mirrors, so use lm[].x directly
       const connections = [
         [0,1],[1,2],[2,3],[3,4],       // thumb
         [0,5],[5,6],[6,7],[7,8],       // index
@@ -1463,14 +1467,14 @@ const html = `
       ctx.lineWidth = 2;
       for (const [a, b] of connections) {
         ctx.beginPath();
-        ctx.moveTo((1 - lm[a].x) * w, lm[a].y * h);
-        ctx.lineTo((1 - lm[b].x) * w, lm[b].y * h);
+        ctx.moveTo(lm[a].x * w, lm[a].y * h);
+        ctx.lineTo(lm[b].x * w, lm[b].y * h);
         ctx.stroke();
       }
       // Draw points
       for (let i = 0; i < 21; i++) {
         ctx.beginPath();
-        ctx.arc((1 - lm[i].x) * w, lm[i].y * h, 3, 0, Math.PI * 2);
+        ctx.arc(lm[i].x * w, lm[i].y * h, 3, 0, Math.PI * 2);
         ctx.fillStyle = i === 0 ? '#ffc15a' : '#56f0ff';
         ctx.fill();
       }

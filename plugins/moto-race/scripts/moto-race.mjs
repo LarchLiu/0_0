@@ -247,7 +247,7 @@ const html = `
 
   /* ---------- Camera preview ---------- */
   .camera-preview {
-    position: fixed; top: 16px; right: 16px; z-index: 18;
+    position: fixed; top: 16px; right: 16px; z-index: 35;
     width: 180px;
     background: var(--panel);
     border: 1px solid var(--panel-border);
@@ -437,24 +437,30 @@ const html = `
         <div class="map-num">1</div>
         <div class="map-name">Neon Circuit</div>
         <div class="map-desc">Smooth curves, balanced difficulty. Perfect for beginners.</div>
+        <div class="map-desc" style="margin-top:6px; font-size:20px">☝️</div>
         <div class="map-preview"><canvas id="map-preview-1" width="200" height="100"></canvas></div>
       </div>
       <div class="map-card" data-map="2" onclick="selectMap(2)">
         <div class="map-num">2</div>
         <div class="map-name">Dragon Tail</div>
         <div class="map-desc">Tight hairpins and S-curves. Technical mastery required.</div>
+        <div class="map-desc" style="margin-top:6px; font-size:20px">✌️</div>
         <div class="map-preview"><canvas id="map-preview-2" width="200" height="100"></canvas></div>
       </div>
       <div class="map-card" data-map="3" onclick="selectMap(3)">
         <div class="map-num">3</div>
         <div class="map-name">Thunder Oval</div>
         <div class="map-desc">High-speed oval with banked turns. Pure speed.</div>
+        <div class="map-desc" style="margin-top:6px; font-size:20px">🤟</div>
         <div class="map-preview"><canvas id="map-preview-3" width="200" height="100"></canvas></div>
       </div>
     </div>
     <div class="map-select-hint">Press <strong>1</strong>, <strong>2</strong>, or <strong>3</strong> to select</div>
-    <div class="map-select-gesture-hint" id="gesture-select-hint" style="display:none">or show 1, 2, or 3 fingers to select</div>
+    <div class="map-select-gesture-hint" id="gesture-select-hint" style="display:none">or hold ☝️ for 1 &nbsp; ✌️ for 2 &nbsp; 🤟 for 3</div>
   </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.min.js"><\/script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.min.js"><\/script>
 
   <script type="importmap">
   {
@@ -1294,25 +1300,63 @@ const html = `
     const FINGER_HOLD_MS = 800; // hold gesture for 800ms to confirm map select
 
     async function initMediaPipe() {
+      const camPreview = document.getElementById('camera-preview');
+      const camVideo = document.getElementById('cam-video');
+      const camOverlay = document.getElementById('cam-overlay');
+      const camDot = document.getElementById('cam-dot');
+      const camStatusText = document.getElementById('cam-status-text');
+      const camGesture = document.getElementById('cam-gesture');
+      const gestureHint = document.getElementById('gesture-select-hint');
+
+      // Always show the camera preview panel
+      camPreview.style.display = '';
+
       try {
-        const camPreview = document.getElementById('camera-preview');
-        const camVideo = document.getElementById('cam-video');
-        const camOverlay = document.getElementById('cam-overlay');
-        const camDot = document.getElementById('cam-dot');
-        const camStatusText = document.getElementById('cam-status-text');
-        const camGesture = document.getElementById('cam-gesture');
-        const gestureHint = document.getElementById('gesture-select-hint');
+        // 1. Check that CDN scripts loaded the globals
+        if (typeof Hands !== 'function' || typeof Camera !== 'function') {
+          camStatusText.textContent = 'Scripts failed';
+          camDot.classList.remove('active');
+          return;
+        }
 
-        camPreview.style.display = '';
+        // 2. Check if any video input device exists
+        if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const videoInputs = devices.filter(d => d.kind === 'videoinput');
+          if (videoInputs.length === 0) {
+            camStatusText.textContent = 'No camera';
+            camDot.classList.remove('active');
+            return;
+          }
+        }
+
+        // 3. Test camera access permission
+        let testStream;
+        try {
+          testStream = await navigator.mediaDevices.getUserMedia({ video: true });
+          testStream.getTracks().forEach(t => t.stop());
+        } catch (accessErr) {
+          const name = accessErr && accessErr.name ? accessErr.name : '';
+          if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+            camStatusText.textContent = 'Permission denied';
+          } else if (name === 'NotReadableError') {
+            camStatusText.textContent = 'Camera busy';
+          } else {
+            camStatusText.textContent = 'Unavailable';
+          }
+          camDot.classList.remove('active');
+          return;
+        }
+
+        // 4. Camera available — init MediaPipe
         camStatusText.textContent = 'Loading...';
-
-        const { Hands } = await import('https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.js');
-        const { Camera } = await import('https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js');
 
         const overlayCtx = camOverlay.getContext('2d');
 
         const hands = new Hands({
-          locateFile: (file) => \`https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/\${file}\`,
+          locateFile: function(file) {
+            return 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/' + file;
+          }
         });
         hands.setOptions({
           maxNumHands: 1,
@@ -1321,7 +1365,7 @@ const html = `
           minTrackingConfidence: 0.55,
         });
 
-        hands.onResults((results) => {
+        hands.onResults(function(results) {
           // Draw hand on overlay canvas
           camOverlay.width = camVideo.videoWidth || 320;
           camOverlay.height = camVideo.videoHeight || 240;
@@ -1352,14 +1396,15 @@ const html = `
             input.gestureBoost = pinch && !allClosed;
 
             // Finger count for map selection (1-3 fingers)
-            // Count only index, middle, ring (ignore thumb and pinky for clarity)
+            const thumbUp = fingers[0];
             const indexUp = fingers[1];
             const middleUp = fingers[2];
             const ringUp = fingers[3];
+            const pinkyUp = fingers[4];
             let count = 0;
-            if (indexUp && !middleUp && !ringUp) count = 1;
-            else if (indexUp && middleUp && !ringUp) count = 2;
-            else if (indexUp && middleUp && ringUp) count = 3;
+            if (indexUp && !middleUp && !ringUp && !pinkyUp) count = 1;        // ☝️ index only
+            else if (indexUp && middleUp && !ringUp && !pinkyUp) count = 2;    // ✌️ index + middle
+            else if (thumbUp && indexUp && !middleUp && !ringUp && pinkyUp) count = 3; // 🤟 thumb + index + pinky
             detectedFingerCount = count;
 
             // Stable hold detection for map select
@@ -1390,17 +1435,17 @@ const html = `
         });
 
         const mpCamera = new Camera(camVideo, {
-          onFrame: async () => { await hands.send({ image: camVideo }); },
+          onFrame: async function() { await hands.send({ image: camVideo }); },
           width: 320, height: 240,
         });
-        await mpCamera.start();
+        mpCamera.start();
         mediapipeLoaded = true;
         camStatusText.textContent = 'Ready';
         gestureHint.style.display = '';
       } catch (err) {
         console.warn('MediaPipe init failed:', err);
-        const camStatusText = document.getElementById('cam-status-text');
-        if (camStatusText) camStatusText.textContent = 'Unavailable';
+        camStatusText.textContent = 'Init failed';
+        camDot.classList.remove('active');
       }
     }
 

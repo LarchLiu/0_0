@@ -1,0 +1,9 @@
+{
+  "name": "moto-race-scripts",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@cloudgeek/glimpse": "^1.0.1"
+  }
+}

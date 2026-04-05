@@ -1,0 +1,8 @@
+{
+  "name": "moto-race",
+  "version": "0.1.0",
+  "description": "Cyberpunk motorcycle racing game for Claude Code using Three.js, MediaPipe Hands, and a native macOS WKWebView host",
+  "author": {
+    "name": "cloudgeek"
+  }
+}

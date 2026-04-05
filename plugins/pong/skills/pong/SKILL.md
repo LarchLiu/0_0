@@ -32,17 +32,18 @@ Running `npm install` in the scripts directory compiles that host binary.
 
 ```bash
 SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
-BINARY="$SCRIPTS_DIR/native/glimpse"
+BINARY="$SCRIPTS_DIR/node_modules/@cloudgeek/glimpse/glimpse"
 NEEDS_BUILD=0
 if [ ! -x "$BINARY" ]; then
   NEEDS_BUILD=1
 else
-  for src in "$SCRIPTS_DIR"/native/glimpse.swift "$SCRIPTS_DIR"/native/Info.plist; do
+  GLIMPSE_DIR="$SCRIPTS_DIR/node_modules/@cloudgeek/glimpse"
+  for src in "$GLIMPSE_DIR"/glimpse.swift "$GLIMPSE_DIR"/Info.plist; do
     [ "$src" -nt "$BINARY" ] && NEEDS_BUILD=1 && break
   done
 fi
 if [ "$NEEDS_BUILD" -eq 1 ]; then
-  cd "$SCRIPTS_DIR" && npm run build
+  cd "$SCRIPTS_DIR" && npm install
 fi
 ```
 

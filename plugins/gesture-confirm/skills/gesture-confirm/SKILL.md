@@ -42,7 +42,7 @@ Running `npm install` in the scripts directory compiles that host binary.
 
 ```bash
 SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
-if [ ! -x "$SCRIPTS_DIR/native/glimpse" ]; then
+if [ ! -x "$SCRIPTS_DIR/node_modules/@cloudgeek/glimpse/glimpse" ]; then
   cd "$SCRIPTS_DIR" && npm install
 fi
 ```

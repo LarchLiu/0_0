@@ -3,8 +3,7 @@
   "version": "2.2.5",
   "type": "module",
   "private": true,
-  "scripts": {
-    "build": "mkdir -p /tmp/gc-swift-cache && swiftc -module-cache-path /tmp/gc-swift-cache -O native/glimpse.swift -o native/glimpse -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker native/Info.plist",
-    "postinstall": "npm run build"
+  "dependencies": {
+    "@cloudgeek/glimpse": "^1.0.0"
   }
 }

@@ -2,9 +2,10 @@
 set -e
 
 SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
-BINARY="$SCRIPTS_DIR/native/glimpse"
+GLIMPSE_DIR="$SCRIPTS_DIR/node_modules/@cloudgeek/glimpse"
+BINARY="$GLIMPSE_DIR/glimpse"
 
-# Build the local WKWebView host if missing
+# Install deps (builds Glimpse host) if binary missing
 if [ ! -x "$BINARY" ]; then
   cd "$SCRIPTS_DIR" && npm install --silent 2>/dev/null
 fi

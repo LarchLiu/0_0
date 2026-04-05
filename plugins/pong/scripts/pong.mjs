@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { parseArgs } from 'node:util';
-import { open } from './native/glimpse.mjs';
+import { open } from '@cloudgeek/glimpse';
 
 const { values } = parseArgs({
   options: {
@@ -1370,6 +1370,7 @@ function runWindow() {
         ...(width != null ? { width } : {}),
         ...(height != null ? { height } : {}),
         title,
+        resizable: true,
       });
     } catch (error) {
       reject(error);

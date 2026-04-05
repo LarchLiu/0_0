@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { prompt } from './native/glimpse.mjs';
+import { prompt } from '@cloudgeek/glimpse';
 import { parseArgs } from 'node:util';
 
 const { values } = parseArgs({

@@ -433,28 +433,28 @@ const html = `
     <div class="map-select-title">SELECT TRACK</div>
     <div class="map-select-subtitle">Choose your race circuit</div>
     <div class="map-cards">
-      <div class="map-card" data-map="0" onclick="selectMap(0)" style="border-color: rgba(148,164,200,0.3)">
+      <div class="map-card" data-map="0" style="border-color: rgba(148,164,200,0.3)">
         <div class="map-num" style="color: var(--muted); text-shadow: none; font-size:36px">T</div>
         <div class="map-name">Test Track</div>
         <div class="map-desc">Open field. No track, no barriers, no opponents.</div>
         <div class="map-desc" style="margin-top:6px; font-size:16px">🏁</div>
         <div class="map-preview"><canvas id="map-preview-0" width="200" height="100"></canvas></div>
       </div>
-      <div class="map-card" data-map="1" onclick="selectMap(1)">
+      <div class="map-card" data-map="1">
         <div class="map-num">1</div>
         <div class="map-name">Neon Circuit</div>
         <div class="map-desc">Smooth curves, balanced difficulty. Perfect for beginners.</div>
         <div class="map-desc" style="margin-top:6px; font-size:20px">☝️</div>
         <div class="map-preview"><canvas id="map-preview-1" width="200" height="100"></canvas></div>
       </div>
-      <div class="map-card" data-map="2" onclick="selectMap(2)">
+      <div class="map-card" data-map="2">
         <div class="map-num">2</div>
         <div class="map-name">Dragon Tail</div>
         <div class="map-desc">Tight hairpins and S-curves. Technical mastery required.</div>
         <div class="map-desc" style="margin-top:6px; font-size:20px">✌️</div>
         <div class="map-preview"><canvas id="map-preview-2" width="200" height="100"></canvas></div>
       </div>
-      <div class="map-card" data-map="3" onclick="selectMap(3)">
+      <div class="map-card" data-map="3">
         <div class="map-num">3</div>
         <div class="map-name">Thunder Oval</div>
         <div class="map-desc">High-speed oval with banked turns. Pure speed.</div>
@@ -472,7 +472,7 @@ const html = `
     var debugToasts = document.getElementById('debugToasts');
     function showDebugToast(tag, message) {
       var el = document.createElement('div');
-      el.style.cssText = 'background:rgba(255,60,80,0.88);color:#fff;padding:10px 14px;border-radius:10px;font-size:12px;line-height:1.45;backdrop-filter:blur(8px);box-shadow:0 4px 20px rgba(0,0,0,0.4);pointer-events:auto;word-break:break-word;';
+      el.style.cssText = 'background:rgba(255,60,80,0.88);color:#fff;padding:10px 14px;border-radius:10px;font-size:12px;line-height:1.45;backdrop-filter:blur(8px);box-shadow:0 4px 20px rgba(0,0,0,0.4);pointer-events:auto;word-break:break-word;-webkit-user-select:text;user-select:text;cursor:text;';
       el.innerHTML = '<strong>[' + tag + ']</strong> ' + message;
       debugToasts.appendChild(el);
     }
@@ -486,7 +486,6 @@ const html = `
   <\/script>
 
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.min.js"><\/script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1657299874/face_mesh.js"><\/script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.min.js"><\/script>
 
   <script type="importmap">
@@ -1530,6 +1529,9 @@ const html = `
             camGesture.textContent = handLabel + headLabel;
           } else {
             input.hasHand = false;
+            input.gestureThrottle = false;
+            input.gestureBrake = false;
+            input.gestureBoost = false;
             detectedFingerCount = 0;
             fingerCountStable = 0;
             camDot.classList.remove('active');
@@ -1541,76 +1543,80 @@ const html = `
           }
         });
 
-        // -- Face Mesh (head tilt detection) --
-        let faceMeshReady = false;
-        if (typeof FaceMesh === 'function') {
-          const faceMesh = new FaceMesh({
-            locateFile: function(file) {
-              return 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1657299874/' + file;
-            }
-          });
-          faceMesh.setOptions({
-            maxNumFaces: 1,
-            refineLandmarks: false,
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5,
-          });
-
-          faceMesh.onResults(function(faceResults) {
-            const ow = camOverlay.width || 320;
-            const oh = camOverlay.height || 240;
-
-            if (faceResults.multiFaceLandmarks && faceResults.multiFaceLandmarks.length > 0) {
-              const fl = faceResults.multiFaceLandmarks[0];
-              input.hasFace = true;
-              input.lastFaceTime = performance.now();
-
-              // Head roll from eye corners: landmark 33 (L eye outer), 263 (R eye outer)
-              const leftEye = fl[33];
-              const rightEye = fl[263];
-              const dx = rightEye.x - leftEye.x;
-              const dy = rightEye.y - leftEye.y;
-              const rollDeg = Math.atan2(dy, dx) * (180 / Math.PI);
-
-              // Dead zone: ignore tilt < 8 degrees, map 8~35 degrees to 0~1
-              const TILT_DEAD = 8;
-              const TILT_MAX = 35;
-              let tilt = 0;
-              if (Math.abs(rollDeg) > TILT_DEAD) {
-                const sign = rollDeg > 0 ? 1 : -1;
-                tilt = sign * Math.min(1, (Math.abs(rollDeg) - TILT_DEAD) / (TILT_MAX - TILT_DEAD));
-              }
-              input.headTilt = THREE.MathUtils.lerp(input.headTilt, tilt, 0.3);
-
-              // Draw eye-line on overlay to show tilt
-              drawHeadTiltIndicator(overlayCtx, fl, ow, oh, rollDeg);
-            } else {
-              input.hasFace = false;
-              input.headTilt = THREE.MathUtils.lerp(input.headTilt, 0, 0.15);
-            }
-          });
-
-          faceMeshReady = true;
-
-          // -- Single Camera driving both Hands + FaceMesh --
-          const mpCamera = new Camera(camVideo, {
-            onFrame: async function() {
-              await Promise.all([
-                hands.send({ image: camVideo }),
-                faceMesh.send({ image: camVideo }),
-              ]);
+        // -- Face Landmarker (head tilt detection via @mediapipe/tasks-vision) --
+        let faceLandmarker = null;
+        let faceLandmarkerReady = false;
+        try {
+          const vision = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.mjs');
+          const { FaceLandmarker, FilesetResolver } = vision;
+          const filesetResolver = await FilesetResolver.forVisionTasks(
+            'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm'
+          );
+          faceLandmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
+            baseOptions: {
+              modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+              delegate: 'GPU',
             },
-            width: 320, height: 240,
+            runningMode: 'VIDEO',
+            numFaces: 1,
           });
-          mpCamera.start();
-        } else {
-          // FaceMesh not available — run Hands only
-          const mpCamera = new Camera(camVideo, {
-            onFrame: async function() { await hands.send({ image: camVideo }); },
-            width: 320, height: 240,
-          });
-          mpCamera.start();
+          faceLandmarkerReady = true;
+        } catch (fmErr) {
+          showDebugToast('FaceLandmarker', 'Init failed: ' + (fmErr && fmErr.message ? fmErr.message : String(fmErr)) + '. Head tilt disabled.');
         }
+
+        // -- Camera: drive Hands + FaceLandmarker --
+        let lastFaceTime = -1;
+        const mpCamera = new Camera(camVideo, {
+          onFrame: async function() {
+            await hands.send({ image: camVideo });
+
+            // FaceLandmarker runs synchronously on the video frame
+            if (faceLandmarkerReady && faceLandmarker && camVideo.currentTime !== lastFaceTime) {
+              try {
+                lastFaceTime = camVideo.currentTime;
+                const faceResult = faceLandmarker.detectForVideo(camVideo, performance.now());
+                const ow = camOverlay.width || 320;
+                const oh = camOverlay.height || 240;
+
+                if (faceResult.faceLandmarks && faceResult.faceLandmarks.length > 0) {
+                  const fl = faceResult.faceLandmarks[0];
+                  input.hasFace = true;
+                  input.lastFaceTime = performance.now();
+
+                  // Head roll from eye corners: landmark 33 (L eye outer), 263 (R eye outer)
+                  const leftEye = fl[33];
+                  const rightEye = fl[263];
+                  const dx = rightEye.x - leftEye.x;
+                  const dy = rightEye.y - leftEye.y;
+                  const rollDeg = Math.atan2(dy, dx) * (180 / Math.PI);
+
+                  // Dead zone: ignore tilt < 8 degrees, map 8~35 degrees to 0~1
+                  const TILT_DEAD = 8;
+                  const TILT_MAX = 35;
+                  let tilt = 0;
+                  if (Math.abs(rollDeg) > TILT_DEAD) {
+                    const sign = rollDeg > 0 ? 1 : -1;
+                    tilt = sign * Math.min(1, (Math.abs(rollDeg) - TILT_DEAD) / (TILT_MAX - TILT_DEAD));
+                  }
+                  input.headTilt = THREE.MathUtils.lerp(input.headTilt, tilt, 0.3);
+
+                  // Draw eye-line on overlay to show tilt
+                  drawHeadTiltIndicator(overlayCtx, fl, ow, oh, rollDeg);
+                } else {
+                  input.hasFace = false;
+                  input.headTilt = THREE.MathUtils.lerp(input.headTilt, 0, 0.15);
+                }
+              } catch (e) {
+                faceLandmarkerReady = false;
+                faceLandmarker = null;
+                showDebugToast('FaceLandmarker', 'Runtime error, head tilt disabled.');
+              }
+            }
+          },
+          width: 320, height: 240,
+        });
+        mpCamera.start();
 
         mediapipeLoaded = true;
         camStatusText.textContent = 'Ready';
@@ -2324,6 +2330,14 @@ const html = `
        ================================================================ */
     showMapSelect();
     requestAnimationFrame(gameLoop);
+
+    // Map card click delegation
+    document.querySelectorAll('.map-card[data-map]').forEach(function(card) {
+      card.addEventListener('click', function() {
+        const id = parseInt(card.getAttribute('data-map'), 10);
+        if (!isNaN(id)) window.selectMap(id);
+      });
+    });
 
     // Try to init MediaPipe (non-blocking)
     initMediaPipe().catch(() => {});

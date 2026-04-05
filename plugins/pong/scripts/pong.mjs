@@ -233,6 +233,10 @@ const html = `
     transform: scaleX(-1);
   }
 
+  #video::-webkit-media-controls {
+    display: none !important;
+  }
+
   #overlay {
     pointer-events: none;
   }

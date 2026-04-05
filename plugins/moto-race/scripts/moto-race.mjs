@@ -1373,6 +1373,7 @@ const html = `
 
           if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
             const lm = results.multiHandLandmarks[0];
+            const handedness = results.multiHandedness && results.multiHandedness[0] ? results.multiHandedness[0].label : 'Right';
             input.hasHand = true;
             input.lastHandTime = performance.now();
 
@@ -1389,8 +1390,8 @@ const html = `
             const steer = THREE.MathUtils.clamp(offset * 3.0, -1, 1);
             input.gestureSteer = THREE.MathUtils.lerp(input.gestureSteer, steer, 0.25);
 
-            // Finger classification
-            const fingers = classifyFingers(lm);
+            // Finger classification — pass handedness for correct thumb detection
+            const fingers = classifyFingers(lm, handedness);
             const openCount = fingers.filter(f => f).length;
             const allOpen = fingers.every(f => f);
             const allClosed = fingers.every(f => !f);
@@ -1481,8 +1482,9 @@ const html = `
       }
     }
 
-    function classifyFingers(lm) {
-      const thumbOpen = lm[4].x < lm[3].x;
+    function classifyFingers(lm, handedness) {
+      // Thumb direction depends on which hand (MediaPipe label is mirrored)
+      const thumbOpen = handedness === 'Left' ? lm[4].x > lm[3].x : lm[4].x < lm[3].x;
       const indexOpen = lm[8].y < lm[6].y;
       const middleOpen = lm[12].y < lm[10].y;
       const ringOpen = lm[16].y < lm[14].y;

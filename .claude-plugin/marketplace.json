@@ -28,6 +28,17 @@
       },
       "category": "games",
       "tags": ["gesture", "mediapipe", "threejs", "camera", "pong"]
+    },
+    {
+      "name": "moto-race",
+      "source": "./plugins/moto-race",
+      "description": "Cyberpunk motorcycle racing game for Claude Code with 3 selectable tracks, AI opponents, gesture controls via MediaPipe Hands, three.js 3D rendering, and native macOS WKWebView host",
+      "version": "0.1.0",
+      "author": {
+        "name": "cloudgeek"
+      },
+      "category": "games",
+      "tags": ["gesture", "mediapipe", "threejs", "camera", "racing", "motorcycle"]
     }
   ]
 }

@@ -1379,13 +1379,14 @@ const html = `
             // Draw hand landmarks on overlay
             drawHandLandmarks(overlayCtx, lm, camOverlay.width, camOverlay.height);
 
-            // Steering from palm center — with dead zone to prevent drift
+            // Steering from palm center — mirror like pong, with dead zone
             const palmCenterX = (lm[0].x + lm[5].x + lm[9].x + lm[13].x + lm[17].x) / 5;
-            const DEAD_ZONE = 0.08; // ignore small offsets from center
-            let offset = palmCenterX - 0.5;
+            const mirroredX = 1 - palmCenterX; // mirror to match camera view
+            const DEAD_ZONE = 0.08;
+            let offset = mirroredX - 0.5;
             if (Math.abs(offset) < DEAD_ZONE) offset = 0;
             else offset = offset > 0 ? offset - DEAD_ZONE : offset + DEAD_ZONE;
-            const steer = THREE.MathUtils.clamp(offset * -3.0, -1, 1);
+            const steer = THREE.MathUtils.clamp(offset * 3.0, -1, 1);
             input.gestureSteer = THREE.MathUtils.lerp(input.gestureSteer, steer, 0.25);
 
             // Finger classification

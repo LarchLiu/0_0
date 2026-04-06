@@ -1,0 +1,8 @@
+{
+  "name": "fitness-coach",
+  "version": "0.1.0",
+  "description": "AI fitness coach – real-time pose scoring with MediaPipe PoseLandmarker via native macOS WKWebView",
+  "author": {
+    "name": "cloudgeek"
+  }
+}

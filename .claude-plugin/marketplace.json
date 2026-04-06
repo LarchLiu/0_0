@@ -39,6 +39,17 @@
       },
       "category": "games",
       "tags": ["gesture", "mediapipe", "threejs", "camera", "racing", "motorcycle"]
+    },
+    {
+      "name": "fitness-coach",
+      "source": "./plugins/fitness-coach",
+      "description": "AI fitness coach for Claude Code – import standard exercise videos to generate pose templates, then score your movements in real-time using MediaPipe PoseLandmarker, cosine similarity, and online DTW via native macOS WKWebView host",
+      "version": "0.1.0",
+      "author": {
+        "name": "cloudgeek"
+      },
+      "category": "fitness",
+      "tags": ["fitness", "mediapipe", "pose", "camera", "scoring", "dtw"]
     }
   ]
 }

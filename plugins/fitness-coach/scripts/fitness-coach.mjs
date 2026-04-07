@@ -396,6 +396,21 @@ const html = `
       <video id="std-video" playsinline></video>
       <video id="cam-video" playsinline autoplay muted></video>
       <canvas id="skeleton-canvas"></canvas>
+      <div id="visibility-warning" style="
+        position: absolute; inset: 0; z-index: 5;
+        display: none; justify-content: center; align-items: center;
+        pointer-events: none;
+      ">
+        <div style="
+          background: rgba(4,5,11,0.75); padding: 16px 28px; border-radius: 12px;
+          border: 1px solid rgba(255,94,169,0.4); text-align: center;
+          backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+        ">
+          <div style="font-size: 28px; margin-bottom: 6px;">&#x26A0;</div>
+          <div style="color: var(--magenta); font-size: 16px; font-weight: 600;">Please show your full body</div>
+          <div style="color: var(--muted); font-size: 12px; margin-top: 4px;">Ensure all key joints are visible</div>
+        </div>
+      </div>
       <div class="cam-fallback" id="cam-fallback">
         <div class="cam-fallback-icon">!</div>
         <div class="cam-fallback-title" id="cam-fallback-title">camera unavailable</div>
@@ -415,6 +430,45 @@ const html = `
   <!-- ====== COUNTDOWN OVERLAY ====== -->
   <div class="countdown-overlay" id="countdown-overlay">
     <div class="countdown-text" id="countdown-text">3</div>
+  </div>
+
+  <!-- ====== CALIBRATION OVERLAY ====== -->
+  <div id="calibration-overlay" style="
+    position: fixed; inset: 0; z-index: 45;
+    display: none; flex-direction: column;
+    justify-content: center; align-items: center;
+    background: rgba(4,5,11,0.92);
+  ">
+    <div style="position: relative; width: 300px; display: flex; flex-direction: column; align-items: center;">
+      <div id="calibration-silhouette" style="position: relative; width: 200px; height: 320px; margin-bottom: 20px; opacity: 0.3; transition: opacity 0.3s;">
+        <!-- Simple human silhouette SVG -->
+        <svg viewBox="0 0 120 200" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;">
+          <circle cx="60" cy="22" r="14" fill="none" stroke="var(--cyan)" stroke-width="1.5"/>
+          <line x1="60" y1="36" x2="60" y2="110" stroke="var(--cyan)" stroke-width="1.5"/>
+          <line x1="30" y1="55" x2="90" y2="55" stroke="var(--cyan)" stroke-width="1.5"/>
+          <line x1="30" y1="55" x2="18" y2="90" stroke="var(--cyan)" stroke-width="1.5"/>
+          <line x1="18" y1="90" x2="14" y2="120" stroke="var(--cyan)" stroke-width="1.5"/>
+          <line x1="90" y1="55" x2="102" y2="90" stroke="var(--cyan)" stroke-width="1.5"/>
+          <line x1="102" y1="90" x2="106" y2="120" stroke="var(--cyan)" stroke-width="1.5"/>
+          <line x1="42" y1="110" x2="78" y2="110" stroke="var(--cyan)" stroke-width="1.5"/>
+          <line x1="42" y1="110" x2="35" y2="155" stroke="var(--cyan)" stroke-width="1.5"/>
+          <line x1="35" y1="155" x2="32" y2="195" stroke="var(--cyan)" stroke-width="1.5"/>
+          <line x1="78" y1="110" x2="85" y2="155" stroke="var(--cyan)" stroke-width="1.5"/>
+          <line x1="85" y1="155" x2="88" y2="195" stroke="var(--cyan)" stroke-width="1.5"/>
+        </svg>
+        <!-- Progress ring overlaid around silhouette -->
+        <div style="position: absolute; top: -20px; left: 50%; transform: translateX(-50%); width: 240px; height: 360px; pointer-events: none;">
+          <svg viewBox="0 0 240 360" style="width:100%;height:100%;">
+            <rect x="4" y="4" width="232" height="352" rx="20" ry="20" fill="none" stroke="rgba(86,240,255,0.1)" stroke-width="3"/>
+            <rect id="calibration-ring" x="4" y="4" width="232" height="352" rx="20" ry="20" fill="none" stroke="var(--cyan)" stroke-width="3" stroke-linecap="round" stroke-dasharray="1164" stroke-dashoffset="1164" style="transition: stroke-dashoffset 0.1s linear;"/>
+          </svg>
+        </div>
+      </div>
+      <div id="calibration-message" style="font-size: 18px; font-weight: 600; text-align: center; color: var(--cyan); margin-bottom: 8px; min-height: 28px;">Stand in front of the camera</div>
+      <div id="calibration-hint" style="font-size: 13px; color: var(--muted); text-align: center; min-height: 20px;">Ensure your full body is visible</div>
+      <div id="calibration-landmark-count" style="font-size: 12px; color: var(--muted); margin-top: 12px; font-variant-numeric: tabular-nums;">landmarks: --/33</div>
+      <button class="btn btn-sm" style="margin-top: 20px;" onclick="skipCalibration()">skip calibration</button>
+    </div>
   </div>
 
   <!-- ====== RESULT SCREEN ====== -->
@@ -474,6 +528,10 @@ const html = `
     let scoringStartTime = 0;
     let scoreHistory = [];
     let extractedFrames = [];      // temp storage during recording
+    let lastValidUserFrame = null;   // cached last valid frame for fallback
+    let visibilityWarningEl = null;  // cached DOM ref
+    let landmarkSmoother = null;
+    let bioValidator = null;
 
     // ── Pose connections for skeleton drawing ──
     const POSE_CONNECTIONS = [
@@ -502,6 +560,60 @@ const html = `
       { name: 'torsoLean',     points: [11, 23, 25] },
       { name: 'spineAngle',    points: [12, 24, 26] },
     ];
+
+    // ── Key joints that must be visible for valid scoring ──
+    const KEY_JOINTS = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
+    //                  LSh  RSh  LEl  REl  LWr  RWr  LHi  RHi  LKn  RKn  LAn  RAn
+    const KEY_JOINT_VISIBILITY_THRESHOLD = 0.6;
+
+    /**
+     * Check if key joints have sufficient visibility.
+     * @param {Array} landmarks - raw landmarks array (33 items with .visibility)
+     * @returns {{ valid: boolean, visibleCount: number, totalRequired: number }}
+     */
+    function validateFrameVisibility(landmarks) {
+      let visibleCount = 0;
+      for (const idx of KEY_JOINTS) {
+        if (idx < landmarks.length && landmarks[idx].visibility >= KEY_JOINT_VISIBILITY_THRESHOLD) {
+          visibleCount++;
+        }
+      }
+      return {
+        valid: visibleCount >= KEY_JOINTS.length,
+        visibleCount,
+        totalRequired: KEY_JOINTS.length,
+      };
+    }
+
+    // ── Bone segments for length consistency checking ──
+    const BONE_SEGMENTS = [
+      { name: 'leftUpperArm',  from: 11, to: 13 },
+      { name: 'leftForearm',   from: 13, to: 15 },
+      { name: 'rightUpperArm', from: 12, to: 14 },
+      { name: 'rightForearm',  from: 14, to: 16 },
+      { name: 'leftThigh',     from: 23, to: 25 },
+      { name: 'leftShin',      from: 25, to: 27 },
+      { name: 'rightThigh',    from: 24, to: 26 },
+      { name: 'rightShin',     from: 26, to: 28 },
+      { name: 'shoulderWidth', from: 11, to: 12 },
+      { name: 'hipWidth',      from: 23, to: 24 },
+    ];
+
+    // ── Joint angle physiological limits (degrees) ──
+    const JOINT_ANGLE_LIMITS = {
+      leftElbow:     { min: 10,  max: 175 },
+      rightElbow:    { min: 10,  max: 175 },
+      leftShoulder:  { min: 0,   max: 190 },
+      rightShoulder: { min: 0,   max: 190 },
+      leftHip:       { min: 0,   max: 180 },
+      rightHip:      { min: 0,   max: 180 },
+      leftKnee:      { min: 0,   max: 180 },
+      rightKnee:     { min: 0,   max: 180 },
+      leftAnkle:     { min: 50,  max: 170 },
+      rightAnkle:    { min: 50,  max: 170 },
+    };
+
+    const BONE_LENGTH_ANOMALY_THRESHOLD = 0.30;
 
     // ───────────────────────────────────────────────────
     // MATH UTILITIES
@@ -659,6 +771,134 @@ const html = `
     }
 
     // ───────────────────────────────────────────────────
+    // TEMPORAL SMOOTHING (SLIDING WINDOW)
+    // ───────────────────────────────────────────────────
+
+    class LandmarkSmoother {
+      constructor(windowSize = 5) {
+        this.windowSize = windowSize;
+        this.buffer = [];
+      }
+
+      reset() {
+        this.buffer = [];
+      }
+
+      /**
+       * Add a frame and return the smoothed result.
+       * @param {{ normalizedLandmarks: Array, angles: Object }} frame
+       * @returns {{ normalizedLandmarks: Array, angles: Object }}
+       */
+      feed(frame) {
+        this.buffer.push(frame);
+        if (this.buffer.length > this.windowSize) {
+          this.buffer.shift();
+        }
+
+        if (this.buffer.length === 1) {
+          return frame;
+        }
+
+        // Average normalized landmarks
+        const numLandmarks = frame.normalizedLandmarks.length;
+        const smoothedLandmarks = [];
+        for (let i = 0; i < numLandmarks; i++) {
+          let sx = 0, sy = 0, sz = 0, sv = 0;
+          for (const f of this.buffer) {
+            sx += f.normalizedLandmarks[i].x;
+            sy += f.normalizedLandmarks[i].y;
+            sz += f.normalizedLandmarks[i].z;
+            sv += f.normalizedLandmarks[i].visibility;
+          }
+          const n = this.buffer.length;
+          smoothedLandmarks.push({ x: sx / n, y: sy / n, z: sz / n, visibility: sv / n });
+        }
+
+        // Average angles
+        const smoothedAngles = {};
+        const angleKeys = Object.keys(frame.angles);
+        for (const key of angleKeys) {
+          let sum = 0;
+          for (const f of this.buffer) {
+            sum += f.angles[key];
+          }
+          smoothedAngles[key] = sum / this.buffer.length;
+        }
+
+        return { normalizedLandmarks: smoothedLandmarks, angles: smoothedAngles };
+      }
+    }
+
+    // ───────────────────────────────────────────────────
+    // BIOMECHANICAL VALIDATION
+    // ───────────────────────────────────────────────────
+
+    class BiomechanicalValidator {
+      constructor() {
+        this.boneLengthStats = {};
+        this.frameCount = 0;
+        this.warmupFrames = 10;
+      }
+
+      reset() {
+        this.boneLengthStats = {};
+        this.frameCount = 0;
+      }
+
+      _dist3D(lmA, lmB) {
+        const dx = lmA.x - lmB.x;
+        const dy = lmA.y - lmB.y;
+        const dz = lmA.z - lmB.z;
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
+      }
+
+      /**
+       * Validate a frame against biomechanical constraints.
+       * @param {Array} worldLandmarks - raw world landmarks (33 items)
+       * @param {Object} angles - computed angles from extractAllAngles
+       * @returns {{ valid: boolean, reason: string|null }}
+       */
+      validate(worldLandmarks, angles) {
+        this.frameCount++;
+
+        // Check joint angle limits
+        for (const [jointName, limits] of Object.entries(JOINT_ANGLE_LIMITS)) {
+          if (angles[jointName] == null) continue;
+          if (angles[jointName] < limits.min || angles[jointName] > limits.max) {
+            if (this.frameCount > this.warmupFrames) {
+              return { valid: false, reason: 'angle_out_of_range:' + jointName };
+            }
+          }
+        }
+
+        // Check bone length consistency
+        for (const seg of BONE_SEGMENTS) {
+          const len = this._dist3D(worldLandmarks[seg.from], worldLandmarks[seg.to]);
+          if (len < 1e-6) continue;
+
+          if (!this.boneLengthStats[seg.name]) {
+            this.boneLengthStats[seg.name] = { sum: 0, count: 0, avg: 0 };
+          }
+
+          const stats = this.boneLengthStats[seg.name];
+
+          if (stats.count > 0) {
+            const deviation = Math.abs(len - stats.avg) / stats.avg;
+            if (deviation > BONE_LENGTH_ANOMALY_THRESHOLD && this.frameCount > this.warmupFrames) {
+              return { valid: false, reason: 'bone_length_anomaly:' + seg.name };
+            }
+          }
+
+          stats.sum += len;
+          stats.count++;
+          stats.avg = stats.sum / stats.count;
+        }
+
+        return { valid: true, reason: null };
+      }
+    }
+
+    // ───────────────────────────────────────────────────
     // MEDIAPIPE POSELANDMARKER
     // ───────────────────────────────────────────────────
 
@@ -679,14 +919,14 @@ const html = `
 
         poseLandmarker = await PoseLandmarker.createFromOptions(filesetResolver, {
           baseOptions: {
-            modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
+            modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task',
             delegate: 'GPU',
           },
           runningMode: 'IMAGE',
           numPoses: 1,
-          minPoseDetectionConfidence: 0.5,
-          minPosePresenceConfidence: 0.5,
-          minTrackingConfidence: 0.5,
+          minPoseDetectionConfidence: 0.7,
+          minPosePresenceConfidence: 0.7,
+          minTrackingConfidence: 0.7,
         });
 
         poseLandmarkerReady = true;
@@ -936,6 +1176,14 @@ const html = `
 
       progressLabel.textContent = 'extracting pose data...';
 
+      let skippedVisibility = 0;
+      let skippedBiomech = 0;
+      const recBioValidator = new BiomechanicalValidator();
+
+      // Track per-landmark visibility across all valid frames for calibration
+      const landmarkVisibilitySums = new Float64Array(33);
+      let validFrameCountForCalibration = 0;
+
       // Seek frame by frame
       for (let i = 0; i < totalFrames; i++) {
         const t = i / fps;
@@ -949,8 +1197,23 @@ const html = `
               result.landmarks && result.landmarks.length > 0) {
             const wl = result.worldLandmarks[0];
             const nl = result.landmarks[0]; // normalized 2D for drawing
+
+            // ── Visibility gate (recording) ──
+            const visCheck = validateFrameVisibility(nl);
+            if (!visCheck.valid) {
+              skippedVisibility++;
+              continue;
+            }
+
             const normalizedLm = normalizeToHipCenter(wl);
             const angles = extractAllAngles(wl);
+
+            // ── Biomechanical validation (recording) ──
+            const bioCheck = recBioValidator.validate(wl, angles);
+            if (!bioCheck.valid) {
+              skippedBiomech++;
+              continue;
+            }
 
             extractedFrames.push({
               t,
@@ -958,6 +1221,12 @@ const html = `
               drawLandmarks: nl.map(p => ({ x: p.x, y: p.y, z: p.z, visibility: p.visibility })),
               angles,
             });
+
+            // Accumulate per-landmark visibility for calibration profile
+            validFrameCountForCalibration++;
+            for (let li = 0; li < 33 && li < nl.length; li++) {
+              landmarkVisibilitySums[li] += nl[li].visibility;
+            }
           }
         } catch (e) {
           // skip frame on error
@@ -975,7 +1244,38 @@ const html = `
         return;
       }
 
-      progressLabel.textContent = 'extraction done! ' + extractedFrames.length + ' valid frames out of ' + totalFrames;
+      // ── Post-process: temporal smoothing of standard data ──
+      if (extractedFrames.length > 1) {
+        const recSmoother = new LandmarkSmoother(5);
+        extractedFrames = extractedFrames.map(f => {
+          const smoothed = recSmoother.feed(f);
+          return { ...f, normalizedLandmarks: smoothed.normalizedLandmarks, angles: smoothed.angles };
+        });
+      }
+
+      // ── Build calibration profile from recording data ──
+      // Determine which landmarks are consistently visible in the standard video
+      // so that scoring calibration only requires what the standard actually has.
+      const calibrationProfile = { requiredLandmarks: [], landmarkAvgVisibility: {} };
+      if (validFrameCountForCalibration > 0) {
+        for (let li = 0; li < 33; li++) {
+          const avgVis = landmarkVisibilitySums[li] / validFrameCountForCalibration;
+          calibrationProfile.landmarkAvgVisibility[li] = Math.round(avgVis * 1000) / 1000;
+          // A landmark is "required" if it was visible (>= 0.6) on average across valid frames
+          if (avgVis >= 0.6) {
+            calibrationProfile.requiredLandmarks.push(li);
+          }
+        }
+      }
+      // Store on extractedFrames' parent scope so saveStandard can access it
+      window.__lastCalibrationProfile = calibrationProfile;
+
+      const skippedTotal = skippedVisibility + skippedBiomech;
+      let statsMsg = extractedFrames.length + ' valid frames out of ' + totalFrames;
+      if (skippedTotal > 0) {
+        statsMsg += ' (skipped ' + skippedVisibility + ' low-visibility, ' + skippedBiomech + ' anomalous)';
+      }
+      progressLabel.textContent = 'extraction done! ' + statsMsg;
 
       // Show preview
       previewEl.classList.add('visible');
@@ -1027,6 +1327,7 @@ const html = `
         duration: extractedFrames[extractedFrames.length - 1].t,
         totalFrames: extractedFrames.length,
         videoPath: lastSelectedVideoPath,
+        calibration: window.__lastCalibrationProfile || { requiredLandmarks: [], landmarkAvgVisibility: {} },
         frames: extractedFrames.map(f => ({
           t: f.t,
           normalizedLandmarks: f.normalizedLandmarks,
@@ -1046,6 +1347,7 @@ const html = `
         totalFrames: data.totalFrames,
         fps: data.fps,
         videoPath: data.videoPath,
+        calibration: data.calibration,
         frames: data.frames,
       });
 
@@ -1105,6 +1407,9 @@ const html = `
 
     function stopCamera() {
       cancelAnimationFrame(scoringRAF);
+      cancelAnimationFrame(calibrationRAF);
+      const calOverlay = document.getElementById('calibration-overlay');
+      if (calOverlay) calOverlay.style.display = 'none';
       const video = document.getElementById('cam-video');
       if (cameraStream) {
         cameraStream.getTracks().forEach(t => t.stop());
@@ -1164,7 +1469,10 @@ const html = `
       const camOk = await startCamera();
       if (!camOk) return;
 
-      // Show countdown
+      // Calibration phase (adjust position first)
+      await runCalibration();
+
+      // Show countdown (3-2-1-GO!)
       await showCountdown();
 
       // Play standard video in sync
@@ -1173,8 +1481,12 @@ const html = `
         stdVideo.play().catch(() => {});
       }
 
-      // Init DTW
+      // Init DTW + filters
       onlineDTW = new OnlineDTW(currentStandard.frames, 30);
+      landmarkSmoother = new LandmarkSmoother(5);
+      bioValidator = new BiomechanicalValidator();
+      lastValidUserFrame = null;
+      visibilityWarningEl = null;
       scoreHistory = [];
       scoringStartTime = performance.now();
       appState = 'scoring';
@@ -1216,7 +1528,173 @@ const html = `
       });
     }
 
+    // ───────────────────────────────────────────────────
+    // CALIBRATION
+    // ───────────────────────────────────────────────────
+
+    let calibrationResolve = null;
+    let calibrationRAF = null;
+    let calibrationStartTime = 0;
+    let calibrationIsAligned = false;
+    const CALIBRATION_HOLD_TIME = 3000;
+    const CALIBRATION_VISIBILITY_THRESHOLD = 0.8;
+
+    function runCalibration() {
+      // Use calibration profile from the current standard, or fall back to all 33
+      const calibration = currentStandard && currentStandard.calibration;
+      const requiredLandmarks = (calibration && calibration.requiredLandmarks && calibration.requiredLandmarks.length > 0)
+        ? calibration.requiredLandmarks
+        : Array.from({ length: 33 }, (_, i) => i);
+      const requiredCount = requiredLandmarks.length;
+
+      return new Promise((resolve) => {
+        calibrationResolve = resolve;
+        calibrationStartTime = 0;
+        calibrationIsAligned = false;
+
+        const overlay = document.getElementById('calibration-overlay');
+        const msgEl = document.getElementById('calibration-message');
+        const hintEl = document.getElementById('calibration-hint');
+        const countEl = document.getElementById('calibration-landmark-count');
+        const ringEl = document.getElementById('calibration-ring');
+        const silhouetteEl = document.getElementById('calibration-silhouette');
+        overlay.style.display = 'flex';
+
+        const ringPerimeter = 1164;
+        ringEl.style.strokeDasharray = ringPerimeter;
+        ringEl.style.strokeDashoffset = ringPerimeter;
+        ringEl.style.stroke = 'var(--cyan)';
+
+        const video = document.getElementById('cam-video');
+
+        function calibrationTick() {
+          if (!poseLandmarkerReady) {
+            calibrationRAF = requestAnimationFrame(calibrationTick);
+            return;
+          }
+
+          try {
+            const result = poseLandmarker.detectForVideo(video, performance.now());
+
+            if (result.landmarks && result.landmarks.length > 0) {
+              const nl = result.landmarks[0];
+
+              // Only check the landmarks that were visible in the standard video
+              let visibleCount = 0;
+              for (const idx of requiredLandmarks) {
+                if (idx < nl.length && nl[idx].visibility >= CALIBRATION_VISIBILITY_THRESHOLD) {
+                  visibleCount++;
+                }
+              }
+
+              countEl.textContent = 'landmarks: ' + visibleCount + '/' + requiredCount;
+              const allVisible = visibleCount >= requiredCount;
+
+              // Check bounding box
+              let minX = 1, maxX = 0, minY = 1, maxY = 0;
+              for (const idx of requiredLandmarks) {
+                if (idx < nl.length && nl[idx].visibility >= 0.5) {
+                  minX = Math.min(minX, nl[idx].x);
+                  maxX = Math.max(maxX, nl[idx].x);
+                  minY = Math.min(minY, nl[idx].y);
+                  maxY = Math.max(maxY, nl[idx].y);
+                }
+              }
+              const bodyHeight = maxY - minY;
+
+              if (!allVisible) {
+                if (visibleCount < requiredCount * 0.5) {
+                  msgEl.textContent = 'Stand in front of the camera';
+                  hintEl.textContent = 'Match the pose from the standard video';
+                } else if (bodyHeight < 0.3) {
+                  msgEl.textContent = 'Move closer to the camera';
+                  hintEl.textContent = 'You appear too small in the frame';
+                } else if (minY < 0.02 || maxY > 0.98) {
+                  msgEl.textContent = 'Step back a little';
+                  hintEl.textContent = 'Parts of your body are out of frame';
+                } else {
+                  msgEl.textContent = 'Adjust your position';
+                  hintEl.textContent = visibleCount + ' of ' + requiredCount + ' required landmarks detected';
+                }
+                calibrationStartTime = 0;
+                calibrationIsAligned = false;
+                silhouetteEl.style.opacity = '0.3';
+                ringEl.style.strokeDashoffset = ringPerimeter;
+                ringEl.style.stroke = 'var(--cyan)';
+              } else {
+                silhouetteEl.style.opacity = '0.6';
+
+                if (!calibrationIsAligned) {
+                  calibrationIsAligned = true;
+                  calibrationStartTime = performance.now();
+                  msgEl.textContent = 'Hold still...';
+                  hintEl.textContent = 'Calibrating your position';
+                }
+
+                const elapsed = performance.now() - calibrationStartTime;
+                const progress = Math.min(1, elapsed / CALIBRATION_HOLD_TIME);
+
+                ringEl.style.strokeDashoffset = ringPerimeter * (1 - progress);
+
+                if (progress >= 1) {
+                  ringEl.style.stroke = 'var(--lime)';
+                  msgEl.textContent = 'Calibration complete!';
+                  msgEl.style.color = 'var(--lime)';
+                  hintEl.textContent = '';
+
+                  setTimeout(() => {
+                    overlay.style.display = 'none';
+                    msgEl.style.color = 'var(--cyan)';
+                    calibrationResolve();
+                  }, 500);
+                  return;
+                }
+              }
+            } else {
+              countEl.textContent = 'landmarks: 0/' + requiredCount;
+              msgEl.textContent = 'No person detected';
+              hintEl.textContent = 'Step in front of the camera';
+              calibrationStartTime = 0;
+              calibrationIsAligned = false;
+              silhouetteEl.style.opacity = '0.3';
+              ringEl.style.strokeDashoffset = ringPerimeter;
+            }
+          } catch (e) {
+            // ignore detection errors during calibration
+          }
+
+          calibrationRAF = requestAnimationFrame(calibrationTick);
+        }
+
+        calibrationRAF = requestAnimationFrame(calibrationTick);
+      });
+    }
+
+    window.skipCalibration = function() {
+      cancelAnimationFrame(calibrationRAF);
+      const overlay = document.getElementById('calibration-overlay');
+      overlay.style.display = 'none';
+      if (calibrationResolve) {
+        calibrationResolve();
+        calibrationResolve = null;
+      }
+    };
+
     let lastVideoTime = -1;
+
+    function updateScoringHUD(dtwResult) {
+      document.getElementById('hud-score').textContent = Math.round(dtwResult.score);
+      document.getElementById('hud-score').parentElement.querySelector('.val').style.color = scoreToColor(dtwResult.score);
+      document.getElementById('hud-avg').textContent = Math.round(onlineDTW.getAverageScore());
+
+      const elapsed = (performance.now() - scoringStartTime) / 1000;
+      const mins = Math.floor(elapsed / 60);
+      const secs = Math.floor(elapsed % 60);
+      document.getElementById('hud-time').textContent = mins + ':' + String(secs).padStart(2, '0');
+
+      document.getElementById('score-progress-fill').style.width = (dtwResult.progress * 100).toFixed(1) + '%';
+      drawScoreChart('score-chart', scoreHistory, 200);
+    }
 
     function scoringLoop() {
       if (appState !== 'scoring') return;
@@ -1245,37 +1723,60 @@ const html = `
 
             const wl = result.worldLandmarks[0];
             const nl = result.landmarks[0];
+
+            // ───── STAGE 1: Visibility gate ─────
+            const visCheck = validateFrameVisibility(nl);
+            if (!visibilityWarningEl) {
+              visibilityWarningEl = document.getElementById('visibility-warning');
+            }
+
+            if (!visCheck.valid) {
+              visibilityWarningEl.style.display = 'flex';
+              // Draw dim skeleton so user can adjust
+              drawSkeleton(skelCtx, nl, cw, ch, 'rgba(255,94,169,0.3)', 2, null);
+              // Don't feed DTW — keep last score on HUD
+              scoringRAF = requestAnimationFrame(scoringLoop);
+              return;
+            }
+
+            visibilityWarningEl.style.display = 'none';
+
+            // ───── STAGE 2: Compute pose features ─────
             const normalizedLm = normalizeToHipCenter(wl);
             const angles = extractAllAngles(wl);
 
-            const userFrame = { normalizedLandmarks: normalizedLm, angles };
+            // ───── STAGE 3: Biomechanical validation ─────
+            const bioCheck = bioValidator.validate(wl, angles);
+            if (!bioCheck.valid && lastValidUserFrame) {
+              // Use previous valid frame — draw skeleton in amber
+              drawSkeleton(skelCtx, nl, cw, ch, 'rgba(255,193,90,0.5)', 2, null);
+              const dtwResult = onlineDTW.feed(lastValidUserFrame);
+              scoreHistory.push(dtwResult.score);
+              updateScoringHUD(dtwResult);
+              if (dtwResult.isComplete) {
+                setTimeout(() => finishScoring(), 500);
+                return;
+              }
+              scoringRAF = requestAnimationFrame(scoringLoop);
+              return;
+            }
 
-            // DTW feed
+            // ───── STAGE 4: Temporal smoothing ─────
+            const rawFrame = { normalizedLandmarks: normalizedLm, angles };
+            const userFrame = landmarkSmoother.feed(rawFrame);
+            lastValidUserFrame = userFrame;
+
+            // ───── STAGE 5: DTW scoring ─────
             const dtwResult = onlineDTW.feed(userFrame);
             scoreHistory.push(dtwResult.score);
 
-            // Get per-joint scores for color coding
+            // ───── STAGE 6: Visualization ─────
             const stdFrame = currentStandard.frames[dtwResult.stdIdx];
             const jointScores = computePerJointScores(userFrame, stdFrame);
-
-            // Draw user skeleton (color-coded) on camera panel
             drawSkeleton(skelCtx, nl, cw, ch, null, 3, jointScores);
 
-            // Update HUD
-            document.getElementById('hud-score').textContent = Math.round(dtwResult.score);
-            document.getElementById('hud-score').parentElement.querySelector('.val').style.color = scoreToColor(dtwResult.score);
-            document.getElementById('hud-avg').textContent = Math.round(onlineDTW.getAverageScore());
-
-            const elapsed = (performance.now() - scoringStartTime) / 1000;
-            const mins = Math.floor(elapsed / 60);
-            const secs = Math.floor(elapsed % 60);
-            document.getElementById('hud-time').textContent = mins + ':' + String(secs).padStart(2, '0');
-
-            // Progress bar
-            document.getElementById('score-progress-fill').style.width = (dtwResult.progress * 100).toFixed(1) + '%';
-
-            // Score chart
-            drawScoreChart('score-chart', scoreHistory, 200);
+            // ───── STAGE 7: HUD update ─────
+            updateScoringHUD(dtwResult);
 
             // Auto-complete
             if (dtwResult.isComplete) {

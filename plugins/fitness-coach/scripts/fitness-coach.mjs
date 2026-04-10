@@ -231,15 +231,6 @@ const html = `
     padding: 8px 20px 12px;
     background: var(--bg-0);
   }
-  .score-progress-wrap {
-    height: 6px; border-radius: 3px; background: rgba(255,255,255,0.1); overflow: hidden;
-    margin-bottom: 10px;
-  }
-  .score-progress-fill {
-    height: 100%; border-radius: 3px;
-    background: linear-gradient(90deg, var(--cyan), var(--lime));
-    transition: width 0.1s linear; width: 0%;
-  }
   .score-chart-wrap {
     height: 60px; border-radius: 6px; background: rgba(0,0,0,0.3);
     border: 1px solid rgba(255,255,255,0.06); overflow: hidden; margin-bottom: 10px;
@@ -403,7 +394,6 @@ const html = `
       </div>
     </div>
     <div class="score-bottom">
-      <div class="score-progress-wrap"><div class="score-progress-fill" id="score-progress-fill"></div></div>
       <div class="score-chart-wrap"><canvas id="score-chart"></canvas></div>
       <div class="score-btns">
         <button class="btn btn-sm" onclick="finishScoring()">finish</button>
@@ -601,17 +591,18 @@ const html = `
     // ───────────────────────────────────────────────────
 
     class OnlineDTW {
-      constructor(standardFrames, windowSize = 30) {
+      constructor(standardFrames, backwardWindowSize = 30, forwardWindowSize = 5) {
         this.std = standardFrames;
-        this.windowSize = windowSize;
+        this.backwardWindowSize = backwardWindowSize;
+        this.forwardWindowSize = forwardWindowSize;
         this.stdPtr = 0;
         this.scores = [];
         this.matchPath = [];
       }
 
       feed(userFrame) {
-        const searchStart = Math.max(0, this.stdPtr - 5);
-        const searchEnd   = Math.min(this.std.length - 1, this.stdPtr + this.windowSize);
+        const searchStart = Math.max(0, this.stdPtr - this.backwardWindowSize);
+        const searchEnd   = Math.min(this.std.length - 1, this.stdPtr + this.forwardWindowSize);
 
         let bestScore = -Infinity;
         let bestIdx   = this.stdPtr;
@@ -637,7 +628,6 @@ const html = `
         return {
           score: frameScore,
           stdIdx: this.stdPtr,
-          progress: this.std.length > 1 ? this.stdPtr / (this.std.length - 1) : 1,
           isComplete: this.stdPtr >= this.std.length - 1,
         };
       }
@@ -679,14 +669,14 @@ const html = `
 
         poseLandmarker = await PoseLandmarker.createFromOptions(filesetResolver, {
           baseOptions: {
-            modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
+            modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task',
             delegate: 'GPU',
           },
           runningMode: 'IMAGE',
           numPoses: 1,
-          minPoseDetectionConfidence: 0.5,
-          minPosePresenceConfidence: 0.5,
-          minTrackingConfidence: 0.5,
+          minPoseDetectionConfidence: 0.6,
+          minPosePresenceConfidence: 0.6,
+          minTrackingConfidence: 0.6,
         });
 
         poseLandmarkerReady = true;
@@ -1170,13 +1160,17 @@ const html = `
       // Play standard video in sync
       if (stdVideo.src) {
         stdVideo.currentTime = 0;
+        stdVideo.onended = () => scheduleFinishScoring();
         stdVideo.play().catch(() => {});
+      } else {
+        stdVideo.onended = null;
       }
 
       // Init DTW
       onlineDTW = new OnlineDTW(currentStandard.frames, 30);
       scoreHistory = [];
       scoringStartTime = performance.now();
+      scoringFinishRequested = false;
       appState = 'scoring';
 
       // Start detection loop
@@ -1217,6 +1211,15 @@ const html = `
     }
 
     let lastVideoTime = -1;
+    let scoringFinishRequested = false;
+
+    function scheduleFinishScoring(delayMs = 0) {
+      if (appState !== 'scoring' || scoringFinishRequested) return;
+      scoringFinishRequested = true;
+      setTimeout(() => {
+        if (appState === 'scoring') finishScoring();
+      }, delayMs);
+    }
 
     function scoringLoop() {
       if (appState !== 'scoring') return;
@@ -1224,6 +1227,12 @@ const html = `
       const video = document.getElementById('cam-video');
       const skelCanvas = document.getElementById('skeleton-canvas');
       const container = document.getElementById('score-main');
+      const stdVideo = document.getElementById('std-video');
+
+      if (stdVideo && stdVideo.src && stdVideo.ended) {
+        scheduleFinishScoring();
+        return;
+      }
 
       // Canvas size matches the visible area (video overlay)
       const cw = container.clientWidth;
@@ -1271,15 +1280,12 @@ const html = `
             const secs = Math.floor(elapsed % 60);
             document.getElementById('hud-time').textContent = mins + ':' + String(secs).padStart(2, '0');
 
-            // Progress bar
-            document.getElementById('score-progress-fill').style.width = (dtwResult.progress * 100).toFixed(1) + '%';
-
             // Score chart
             drawScoreChart('score-chart', scoreHistory, 200);
 
             // Auto-complete
             if (dtwResult.isComplete) {
-              setTimeout(() => finishScoring(), 500);
+              scheduleFinishScoring(500);
               return;
             }
           }
@@ -1292,6 +1298,7 @@ const html = `
     }
 
     window.finishScoring = function() {
+      scoringFinishRequested = false;
       appState = 'result';
       cancelAnimationFrame(scoringRAF);
       stopCamera();
@@ -1337,7 +1344,7 @@ const html = `
       document.getElementById('hud-score').textContent = '...';
       document.getElementById('hud-avg').textContent = '...';
       document.getElementById('hud-time').textContent = '0:00';
-      document.getElementById('score-progress-fill').style.width = '0%';
+      scoringFinishRequested = false;
       await beginScoring();
     };
 

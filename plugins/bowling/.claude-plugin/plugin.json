@@ -1,0 +1,8 @@
+{
+  "name": "bowling",
+  "version": "0.1.0",
+  "description": "Gesture-controlled bowling for Claude Code with 10-pin bowling, strike/spare scoring, MediaPipe Hands controls, Three.js rendering, and a native macOS WKWebView host",
+  "author": {
+    "name": "cloudgeek"
+  }
+}

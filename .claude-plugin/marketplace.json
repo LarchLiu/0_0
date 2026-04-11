@@ -41,6 +41,17 @@
       "tags": ["gesture", "mediapipe", "threejs", "camera", "racing", "motorcycle"]
     },
     {
+      "name": "bowling",
+      "source": "./plugins/bowling",
+      "description": "Gesture-controlled bowling for Claude Code with 10-pin bowling, ball physics, strike/spare detection, gesture controls via MediaPipe Hands, three.js 3D rendering, and native macOS WKWebView host",
+      "version": "0.1.0",
+      "author": {
+        "name": "cloudgeek"
+      },
+      "category": "games",
+      "tags": ["gesture", "mediapipe", "threejs", "camera", "bowling"]
+    },
+    {
       "name": "fitness-coach",
       "source": "./plugins/fitness-coach",
       "description": "AI fitness coach for Claude Code – import standard exercise videos to generate pose templates, then score your movements in real-time using MediaPipe PoseLandmarker, cosine similarity, and online DTW via native macOS WKWebView host",

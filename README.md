@@ -1,6 +1,6 @@
 # gesture-confirm
 
-Claude Code marketplace repository for the `gesture-confirm` plugin. The plugin uses MediaPipe hand tracking with a native macOS `WKWebView` host for gesture-based confirmation and selection.
+Claude Code marketplace repository for `gesture-confirm` plus a small set of native macOS plugins built around MediaPipe tracking and a `WKWebView` host. The current marketplace includes gesture confirmation, Pong, moto racing, bowling, and a fitness coach.
 
 macOS only. The plugin embeds a native `WKWebView` host and is not intended for Linux or Windows.
 
@@ -9,7 +9,17 @@ macOS only. The plugin embeds a native `WKWebView` host and is not intended for 
 ```bash
 claude plugin marketplace add github:cloudgeek/gesture-confirm
 claude plugin install gesture-confirm@gesture-confirm-marketplace
+# or install the bowling game
+claude plugin install bowling@gesture-confirm-marketplace
 ```
+
+## Available Plugins
+
+- `gesture-confirm`: Gesture-based confirmation and option selection for Claude Code tools
+- `pong`: Hand-tracked Pong with keyboard fallback
+- `moto-race`: Cyberpunk motorcycle racing game with gesture input
+- `bowling`: 10-frame bowling game with strike/spare scoring and optional hand tracking
+- `fitness-coach`: Pose-based exercise scoring and coaching
 
 ## Features
 
@@ -27,13 +37,14 @@ claude plugin install gesture-confirm@gesture-confirm-marketplace
 
 ## Install
 
-This repository is a marketplace, not a single-plugin root. Add the marketplace first, then install the plugin from it.
+This repository is a marketplace, not a single-plugin root. Add the marketplace first, then install the plugin you want from it.
 
 From a local checkout:
 
 ```bash
 claude plugin marketplace add /path/to/gesture-confirm
 claude plugin install gesture-confirm@gesture-confirm-marketplace
+claude plugin install bowling@gesture-confirm-marketplace
 ```
 
 From GitHub:
@@ -41,18 +52,27 @@ From GitHub:
 ```bash
 claude plugin marketplace add github:cloudgeek/gesture-confirm
 claude plugin install gesture-confirm@gesture-confirm-marketplace
+claude plugin install bowling@gesture-confirm-marketplace
 ```
 
-The plugin implementation lives in `plugins/gesture-confirm`.
-Dependencies are auto-installed on first hook execution via the hook script.
+Plugin implementations live under `plugins/`.
+`gesture-confirm` auto-installs dependencies on first hook execution; game plugins install dependencies from their own `scripts/` directories.
+
+## Repository Layout
+
+- `plugins/gesture-confirm`: confirmation and selection plugin
+- `plugins/pong`: Pong game plugin
+- `plugins/moto-race`: moto racing plugin
+- `plugins/bowling`: bowling game plugin
+- `plugins/fitness-coach`: fitness coach plugin
 
 ## Usage
 
-### As a Hook (automatic)
+### gesture-confirm as a Hook (automatic)
 
 The plugin registers a `PreToolUse` hook for `Bash|Write|Edit` tools. A gesture confirmation window appears automatically before these tools execute.
 
-### As a Skill (manual)
+### gesture-confirm as a Skill (manual)
 
 Ask Claude to use gesture confirmation:
 
@@ -90,6 +110,21 @@ node plugins/gesture-confirm/scripts/gesture-confirm.mjs --mode select --options
 | 5 fingers (open hand) | - | Option 5 |
 
 Keyboard: `Enter`/`Esc` (confirm), `1`-`5`/`Esc` (select)
+
+## Bowling Quick Start
+
+Install and run the bowling plugin locally:
+
+```bash
+cd plugins/bowling/scripts
+npm install
+node bowling.mjs
+```
+
+You can also launch it through Claude after installing from the marketplace:
+
+> "Use bowling"
+> "Launch the bowling game"
 
 ## License
 
